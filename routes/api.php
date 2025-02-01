@@ -9,6 +9,6 @@ Route::get('/user', function (Request $request) {
 })->middleware('auth:sanctum');
 
 Route::middleware(['firebase'])->group(function () {
-    Route::get('/profile', [UserController::class, 'profile']);
+    Route::post('verify', [UserController::class, 'verifyAndSyncUser']);
     Route::get('/orders', [UserController::class, 'orders']);
 });
