@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use App\Http\Middleware\FirebaseAuthMiddleware;
+use App\Http\Middleware\SanctumMiddleware;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -13,8 +14,14 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // Firebase Authentication
         $middleware->group('firebase', [
             FirebaseAuthMiddleware::class,
+        ]);
+
+        // Sanctum Authentication
+        $middleware->group('auth.sanctum', [
+            SanctumMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

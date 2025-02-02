@@ -3,6 +3,7 @@
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AdminController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -12,3 +13,16 @@ Route::middleware(['firebase'])->group(function () {
     Route::post('verify', [UserController::class, 'verifyAndSyncUser']);
     Route::get('/orders', [UserController::class, 'orders']);
 });
+
+Route::prefix('admin')->group(function () {
+
+    Route::post('login', [AdminController::class, 'login']);
+
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('logout', [AdminController::class, 'logout']);
+        Route::get('details', [AdminController::class, 'details']);
+        Route::post('register', [AdminController::class, 'register']);
+    });
+});
+
+
