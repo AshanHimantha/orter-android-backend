@@ -17,12 +17,26 @@ class StockController extends Controller
     {
         $request->validate([
             'product_id' => 'required|exists:products,id',
-            'size' => 'required|in:XS,S,M,L,XL,XXL',
-            'quantity' => 'required|integer|min:0',
+            'xs_quantity' => 'required|integer|min:0',
+            's_quantity' => 'required|integer|min:0',
+            'm_quantity' => 'required|integer|min:0',
+            'l_quantity' => 'required|integer|min:0',
+            'xl_quantity' => 'required|integer|min:0',
+            'xxl_quantity' => 'required|integer|min:0',
             'is_active' => 'boolean'
         ]);
 
+        // Check if stock exists for product
+        $existingStock = Stock::where('product_id', $request->product_id)->first();
+        if ($existingStock) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Stock already exists for this product'
+            ], 400);
+        }
+
         $stock = Stock::create($request->all());
+
         return response()->json([
             'status' => true,
             'data' => $stock->load('product')
@@ -40,13 +54,17 @@ class StockController extends Controller
     public function update(Request $request, Stock $stock)
     {
         $request->validate([
-            'product_id' => 'exists:products,id',
-            'size' => 'in:XS,S,M,L,XL,XXL',
-            'quantity' => 'integer|min:0',
+            'xs_quantity' => 'integer|min:0',
+            's_quantity' => 'integer|min:0',
+            'm_quantity' => 'integer|min:0',
+            'l_quantity' => 'integer|min:0',
+            'xl_quantity' => 'integer|min:0',
+            'xxl_quantity' => 'integer|min:0',
             'is_active' => 'boolean'
         ]);
 
         $stock->update($request->all());
+
         return response()->json([
             'status' => true,
             'data' => $stock->load('product')
