@@ -8,6 +8,7 @@ use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\GenderController;
 use App\Http\Controllers\ProductCategoryController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\StockController;
 use App\Models\Product;
 
 Route::get('genders', [GenderController::class, 'index']);
@@ -16,10 +17,11 @@ Route::get('collections', [CollectionController::class, 'index']);
 Route::get('products', [ProductController::class, 'index']);
 Route::get('products/{product}', [ProductController::class, 'show']);
 Route::get('products/image/{filename}', [ProductController::class, 'getImage']);
+Route::get('products/{product}/stock', [StockController::class, 'checkStock']);
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
+// Route::get('/user', function (Request $request) {
+//     return $request->user();
+// })->middleware('auth:sanctum');
 
 Route::middleware(['firebase'])->group(function () {
     Route::post('verify', [UserController::class, 'verifyAndSyncUser']);
@@ -38,6 +40,8 @@ Route::prefix('admin')->group(function () {
         Route::apiResource('genders', GenderController::class)->except(['index']);
         Route::apiResource('collections', CollectionController::class)->except(['index']);
         Route::apiResource('products', ProductController::class)->except(['index']);
+        Route::apiResource('stocks', StockController::class);
+        Route::patch('stocks/{stock}/quantities', [StockController::class, 'updateQuantities']);
     });
 });
 
