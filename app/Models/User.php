@@ -54,4 +54,9 @@ class User extends Model
             'is_active' => 'boolean'
         ];
     }
+
+    public function carts()
+    {
+        return $this->hasMany(Cart::class, 'firebase_uid', 'firebase_uid');
+    }
 }

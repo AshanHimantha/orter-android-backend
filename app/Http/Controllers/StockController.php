@@ -90,4 +90,31 @@ class StockController extends Controller
             'data' => $stock->load('product')
         ]);
     }
+
+    public function stockList($limit = 10)
+    {
+        $stocks = Stock::with(['product' => function($query) {
+            $query->select('id', 'name', 'price', 'main_image', 'collection_id');
+        }, 'product.collection:id,name'])
+        ->latest()
+        ->take($limit)
+        ->get();
+    
+        $formattedStocks = $stocks->map(function ($stock) {
+            return [
+                'id' => $stock->id,
+                'product_name' => $stock->product->name,
+                'price' => (int)$stock->product->price, // Cast to integer
+                'main_image' => asset('storage/' . $stock->product->main_image),
+                'collection_name' => $stock->product->collection->name ?? null,
+                'total_quantity' => $stock->total_quantity,
+            ];
+        });
+    
+        return response()->json([
+            'status' => true,
+            'count' => $stocks->count(),
+            'data' => $formattedStocks
+        ]);
+    }
 }
