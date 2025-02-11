@@ -22,9 +22,7 @@ Route::get('products/{product}/stock', [StockController::class, 'checkStock']);
 Route::get('stocks', [StockController::class, 'index']);
 Route::get('stock-list/{limit?}', [StockController::class, 'stockList']);
 Route::get('stocks/{stock}', [StockController::class, 'show']);
-// Route::get('/user', function (Request $request) {
-//     return $request->user();
-// })->middleware('auth:sanctum');
+
 
 Route::middleware(['firebase'])->group(function () {
     Route::post('verify', [UserController::class, 'verifyAndSyncUser']);

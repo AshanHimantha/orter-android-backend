@@ -94,8 +94,17 @@ class CartController extends Controller
 
     public function getUserCart(Request $request)
     {
-        $carts = Cart::where('firebase_uid', $request->firebase_uid)
-            ->with(['stock.product'])
+        $firebaseUid = $request->firebase_uid;
+
+        if (!$firebaseUid) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Firebase UID not found (Middleware issue)'
+            ], 401);
+        }
+
+        $carts = Cart::where('firebase_uid', $firebaseUid)
+            ->with(['stock.product.category']) // Add category relationship
             ->get()
             ->map(function ($cart) {
                 return [
@@ -103,15 +112,32 @@ class CartController extends Controller
                     'size' => $cart->size,
                     'quantity' => $cart->quantity,
                     'product' => [
+                        'id' => $cart->stock->product->id,
                         'name' => $cart->stock->product->name,
                         'price' => (int)$cart->stock->product->price,
-                        'main_image' => $cart->stock->product->main_image_url
+                        'main_image' => $cart->stock->product->main_image_url,
+                        'color' => $cart->stock->product->color,
+                        'category' => [
+                            'id' => $cart->stock->product->category->id,
+                            'name' => $cart->stock->product->category->name
+                        ]
+                    ],
+                    'stock' => [
+                        'id' => $cart->stock->id,
+                        $cart->size => $cart->stock->{strtolower($cart->size).'_quantity'}
                     ]
                 ];
             });
 
+        $totalItems = $carts->sum('quantity');
+        $totalAmount = $carts->sum(function($cart) {
+            return $cart['quantity'] * $cart['product']['price'];
+        });
+
         return response()->json([
             'status' => true,
+            'total_items' => $totalItems,
+            'total_amount' => $totalAmount,
             'data' => $carts
         ]);
     }

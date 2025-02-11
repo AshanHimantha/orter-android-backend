@@ -24,6 +24,7 @@ class ProductController extends Controller
             'name' => 'required|string',
             'description' => 'required|string',
             'price' => 'required|numeric',
+            'weight' => 'required|numeric|min:0',  // Add weight validation
             'material' => 'required|string',
             'color' => 'required|string',
             'main_image' => 'required|image|mimes:jpeg,png,jpg|max:2048',
@@ -75,6 +76,7 @@ class ProductController extends Controller
             'name' => 'string',
             'description' => 'string',
             'price' => 'numeric',
+            'weight' => 'numeric|min:0',  // Add weight validation
             'material' => 'string',
             'color' => 'string',
             'main_image' => 'string',
