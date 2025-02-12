@@ -85,14 +85,47 @@ class CartController extends Controller
 
     public function destroy(Cart $cart)
     {
+        $firebaseUid = $cart->firebase_uid;
         $cart->delete();
+
+        // Get updated cart summary after deletion
+        $userCarts = Cart::where('firebase_uid', $firebaseUid)
+            ->with(['stock.product'])
+            ->get();
+
+        $totalItems = $userCarts->sum('quantity');
+        $subTotal = $userCarts->sum(function($item) {
+            return $item->quantity * (int)$item->stock->product->price;
+        });
+
+        $totalWeight = $userCarts->sum(function($item) {
+            return $item->quantity * $item->stock->product->weight;
+        });
+
+        $weightInKg = $totalWeight / 1000;
+        
+        // Calculate shipping
+        $courier = \App\Models\curriers::where('is_active', true)->first();
+        $shippingFee = $courier->charge;
+
+        if ($weightInKg > 1) {
+            $extraKgs = ceil($weightInKg - 1);
+            $shippingFee += ($extraKgs * $courier->extra_per_kg);
+        }
+
         return response()->json([
             'status' => true,
-            'message' => 'Item removed from cart'
+            'message' => 'Item removed from cart',
+            'summary' => [
+                'item_count' => $totalItems,
+                'subtotal' => (int)$subTotal,
+                'shipping_fee' => (int)$shippingFee,
+                'total' => (int)($subTotal + $shippingFee)
+            ]
         ]);
     }
 
-       public function getUserCart(Request $request)
+    public function getUserCart(Request $request)
     {
         $firebaseUid = $request->firebase_uid;
     
@@ -162,6 +195,115 @@ class CartController extends Controller
             'courier_charge' => (int)$courierCharge,
             'total_amount' => $totalAmount + (int)$courierCharge,
             'data' => $carts
+        ]);
+    }
+
+    public function increaseQuantity(Cart $cart)
+    {
+        $stock = $cart->stock;
+        $sizeColumn = strtolower($cart->size) . '_quantity';
+        
+        if ($stock->$sizeColumn < ($cart->quantity + 1)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Insufficient stock quantity'
+            ], 400);
+        }
+    
+        $cart->increment('quantity');
+    
+        // Get updated cart summary
+        $userCarts = Cart::where('firebase_uid', $cart->firebase_uid)
+            ->with(['stock.product'])
+            ->get();
+    
+        $totalItems = $userCarts->sum('quantity');
+        $subTotal = $userCarts->sum(function($item) {
+            return $item->quantity * (int)$item->stock->product->price;
+        });
+    
+        $totalWeight = $userCarts->sum(function($item) {
+            return $item->quantity * $item->stock->product->weight;
+        });
+    
+        $weightInKg = $totalWeight / 1000;
+        
+        // Calculate shipping
+        $courier = \App\Models\curriers::where('is_active', true)->first();
+        $shippingFee = $courier->charge;
+    
+        if ($weightInKg > 1) {
+            $extraKgs = ceil($weightInKg - 1);
+            $shippingFee += ($extraKgs * $courier->extra_per_kg);
+        }
+    
+        return response()->json([
+            'status' => true,
+            'cart_item' => [
+                'id' => $cart->id,
+                'quantity' => $cart->quantity,
+                'size' => $cart->size,
+                'subtotal' => $cart->quantity * (int)$cart->stock->product->price
+            ],
+            'summary' => [
+                'item_count' => $totalItems,
+                'subtotal' => (int)$subTotal,
+                'shipping_fee' => (int)$shippingFee,
+                'total' => (int)($subTotal + $shippingFee)
+            ]
+        ]);
+    }
+    
+    public function decreaseQuantity(Cart $cart)
+    {
+        if ($cart->quantity <= 1) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Quantity cannot be less than 1'
+            ], 400);
+        }
+    
+        $cart->decrement('quantity');
+    
+        // Get updated cart summary
+        $userCarts = Cart::where('firebase_uid', $cart->firebase_uid)
+            ->with(['stock.product'])
+            ->get();
+    
+        $totalItems = $userCarts->sum('quantity');
+        $subTotal = $userCarts->sum(function($item) {
+            return $item->quantity * (int)$item->stock->product->price;
+        });
+    
+        $totalWeight = $userCarts->sum(function($item) {
+            return $item->quantity * $item->stock->product->weight;
+        });
+    
+        $weightInKg = $totalWeight / 1000;
+        
+        // Calculate shipping
+        $courier = \App\Models\curriers::where('is_active', true)->first();
+        $shippingFee = $courier->charge;
+    
+        if ($weightInKg > 1) {
+            $extraKgs = ceil($weightInKg - 1);
+            $shippingFee += ($extraKgs * $courier->extra_per_kg);
+        }
+    
+        return response()->json([
+            'status' => true,
+            'cart_item' => [
+                'id' => $cart->id,
+                'quantity' => $cart->quantity,
+                'size' => $cart->size,
+                'subtotal' => $cart->quantity * (int)$cart->stock->product->price
+            ],
+            'summary' => [
+                'item_count' => $totalItems,
+                'subtotal' => (int)$subTotal,
+                'shipping_fee' => (int)$shippingFee,
+                'total' => (int)($subTotal + $shippingFee)
+            ]
         ]);
     }
 }

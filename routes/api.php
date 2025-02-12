@@ -29,6 +29,9 @@ Route::middleware(['firebase'])->group(function () {
     Route::get('/orders', [UserController::class, 'orders']);
     Route::apiResource('carts', CartController::class);
     Route::get('user-cart', [CartController::class, 'getUserCart']);
+    Route::patch('carts/{cart}/increase', [CartController::class, 'increaseQuantity']);
+    Route::patch('carts/{cart}/decrease', [CartController::class, 'decreaseQuantity']);
+    
 });
 
 Route::prefix('admin')->group(function () {
