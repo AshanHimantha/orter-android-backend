@@ -92,19 +92,19 @@ class CartController extends Controller
         ]);
     }
 
-    public function getUserCart(Request $request)
+       public function getUserCart(Request $request)
     {
         $firebaseUid = $request->firebase_uid;
-
+    
         if (!$firebaseUid) {
             return response()->json([
                 'status' => false,
                 'message' => 'Firebase UID not found (Middleware issue)'
             ], 401);
         }
-
+    
         $carts = Cart::where('firebase_uid', $firebaseUid)
-            ->with(['stock.product.category']) // Add category relationship
+            ->with(['stock.product.category'])
             ->get()
             ->map(function ($cart) {
                 return [
@@ -117,6 +117,7 @@ class CartController extends Controller
                         'price' => (int)$cart->stock->product->price,
                         'main_image' => $cart->stock->product->main_image_url,
                         'color' => $cart->stock->product->color,
+                        'weight' => $cart->stock->product->weight,
                         'category' => [
                             'id' => $cart->stock->product->category->id,
                             'name' => $cart->stock->product->category->name
@@ -128,16 +129,38 @@ class CartController extends Controller
                     ]
                 ];
             });
-
+    
         $totalItems = $carts->sum('quantity');
         $totalAmount = $carts->sum(function($cart) {
             return $cart['quantity'] * $cart['product']['price'];
         });
-
+    
+        // Calculate total weight in grams
+        $totalWeight = $carts->sum(function($cart) {
+            return $cart['quantity'] * $cart['product']['weight'];
+        });
+    
+        // Convert to kg
+        $weightInKg = $totalWeight / 1000;
+    
+        // Get courier charges
+        $courier = \App\Models\curriers::where('is_active', true)->first();
+        $courierCharge = $courier->charge; // Base charge for up to 1kg
+    
+        // Add extra charge if weight is more than 1kg
+        if ($weightInKg > 1) {
+            $extraKgs = ceil($weightInKg - 1);
+            $courierCharge += ($extraKgs * $courier->extra_per_kg);
+        }
+    
         return response()->json([
             'status' => true,
             'total_items' => $totalItems,
-            'total_amount' => $totalAmount,
+            'sub_total' => $totalAmount,
+            'total_weight' => $totalWeight,
+            'weight_in_kg' => $weightInKg,
+            'courier_charge' => (int)$courierCharge,
+            'total_amount' => $totalAmount + (int)$courierCharge,
             'data' => $carts
         ]);
     }

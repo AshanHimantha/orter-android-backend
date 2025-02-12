@@ -3,13 +3,9 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Models\User;
 
 class Cart extends Model
 {
-    use SoftDeletes;
-
     protected $fillable = [
         'firebase_uid',
         'stock_id',
@@ -30,6 +26,6 @@ class Cart extends Model
 
     public function stock()
     {
-        return $this->belongsTo(Stock::class)->withTrashed();
+        return $this->belongsTo(Stock::class);
     }
 }
