@@ -23,6 +23,7 @@ Route::get('stocks', [StockController::class, 'index']);
 Route::get('stock-list/{limit?}', [StockController::class, 'stockList']);
 Route::get('stocks/{stock}', [StockController::class, 'show']);
 Route::get('stocks/category/{categoryId}/{limit?}', [StockController::class, 'filterByCategory']);
+Route::get('latest-stocks/{limit?}', [StockController::class, 'getLatestStocks']);
 
 Route::middleware(['firebase'])->group(function () {
     Route::post('verify', [UserController::class, 'verifyAndSyncUser']);
@@ -31,6 +32,7 @@ Route::middleware(['firebase'])->group(function () {
     Route::get('user-cart', [CartController::class, 'getUserCart']);
     Route::patch('carts/{cart}/increase', [CartController::class, 'increaseQuantity']);
     Route::patch('carts/{cart}/decrease', [CartController::class, 'decreaseQuantity']);
+   
     
 });
 

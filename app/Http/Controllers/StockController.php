@@ -148,4 +148,35 @@ class StockController extends Controller
         'data' => $formattedStocks
     ]);
 }
+
+
+public function getLatestStocks($limit = 10)
+{
+    $stocks = Stock::with(['product' => function($query) {
+        $query->select('id', 'name', 'price', 'main_image', 'collection_id', 'category_id');
+    }, 'product.collection:id,name'])
+        ->whereHas('product', function($query) {
+            $query->where('is_active', true);
+        })
+        ->latest()
+        ->take($limit)
+        ->get();
+
+    $formattedStocks = $stocks->map(function ($stock) {
+        return [
+            'id' => $stock->id,
+            'product_name' => $stock->product->name,
+            'price' => (int)$stock->product->price,
+            'main_image' => asset('storage/' . $stock->product->main_image),
+            'collection_name' => $stock->product->collection->name ?? null,
+            'total_quantity' => $stock->total_quantity,
+        ];
+    });
+
+    return response()->json([
+        'status' => true,
+        'count' => $stocks->count(),
+        'data' => $formattedStocks
+    ]);
+}
 }
