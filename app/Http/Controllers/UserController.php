@@ -30,18 +30,40 @@ class UserController extends Controller
             $uid = $verifiedIdToken->claims()->get('sub');
             $firebaseUser = $this->auth->getUser($uid);
 
-            $user = User::updateOrCreate(
-                ['firebase_uid' => $uid],  // Primary key for finding user
-                [
-                    'name' => $firebaseUser->displayName ?? '',
+            // Check if user exists by firebase_uid or email
+            $existingUser = User::where('firebase_uid', $uid)
+                ->orWhere('email', $firebaseUser->email)
+                ->first();
+            
+            if ($existingUser) {
+                // Update existing user information
+                $existingUser->update([
+                    'firebase_uid' => $uid,
+                    'name' => $firebaseUser->displayName ?? $existingUser->name,
                     'email' => $firebaseUser->email,
-                    'phone' => $firebaseUser->phoneNumber,
+                    'phone' => $firebaseUser->phoneNumber ?? $existingUser->phone,
                     'is_active' => true
-                ]
-            );
+                ]);
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'User information updated',
+                    'data' => $existingUser->fresh()
+                ]);
+            }
+
+            // Create new user if doesn't exist
+            $user = User::create([
+                'firebase_uid' => $uid,
+                'name' => $firebaseUser->displayName ?? '',
+                'email' => $firebaseUser->email,
+                'phone' => $firebaseUser->phoneNumber,
+                'is_active' => true
+            ]);
 
             return response()->json([
                 'status' => true,
+                'message' => 'User registered successfully',
                 'data' => $user
             ]);
 
