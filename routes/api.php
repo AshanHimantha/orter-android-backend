@@ -7,6 +7,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\GenderController;
+use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductCategoryController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\StockController;
@@ -32,7 +33,8 @@ Route::middleware(['firebase'])->group(function () {
     Route::get('user-cart', [CartController::class, 'getUserCart']);
     Route::patch('carts/{cart}/increase', [CartController::class, 'increaseQuantity']);
     Route::patch('carts/{cart}/decrease', [CartController::class, 'decreaseQuantity']);
-   
+    Route::apiResource('orders', OrderController::class);
+    Route::post('orders/payment', [OrderController::class, 'updatePaymentStatus']);
     
 });
 
