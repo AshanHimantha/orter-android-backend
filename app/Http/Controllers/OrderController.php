@@ -7,6 +7,8 @@ use App\Models\OrderItem;
 use App\Models\Cart;
 use App\Models\Branch;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class OrderController extends Controller
@@ -160,49 +162,95 @@ class OrderController extends Controller
     }
 
     public function updatePaymentStatus(Request $request)
-{
-    $request->validate([
-        'order_id' => 'required|exists:orders,id',
-        'transaction_id' => 'nullable|string',
-        'payment_status' => 'required|in:paid,failed'
-    ]);
+    {
+        try {
+            // Log the entire request for debugging
+            Log::info('PayHere Callback Data:', $request->all());
 
-    $order = Order::where('id', $request->order_id)
-        ->where('firebase_uid', $request->firebase_uid)
-        ->first();
+            // Validate the request with order_id matching order_number
+            $request->validate([
+                'order_id' => 'required|exists:orders,order_number',
+                'merchant_id' => 'required',
+                'payhere_amount' => 'required|numeric',
+                'payhere_currency' => 'required|string',
+                'status_code' => 'required|integer',
+                'md5sig' => 'required|string',
+                'payment_id' => 'required|string'
+            ]);
 
-    if (!$order) {
-        return response()->json([
-            'status' => false,
-            'message' => 'Order not found'
-        ], 404);
+            // Find order by order_number instead of id
+            $order = Order::where('order_number', $request->order_id)->first();
+
+            if (!$order) {
+                Log::error('Order not found:', ['order_number' => $request->order_id]);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Order not found'
+                ], 404);
+            }
+
+            // Verify MD5 signature
+            $merchant_secret = env('PAYHERE_MERCHANT_SECRET');
+            $md5sig = strtoupper(md5(
+                $request->merchant_id .
+                $request->order_id .
+                $request->payhere_amount .
+                $request->payhere_currency .
+                $request->status_code .
+                strtoupper(md5($merchant_secret))
+            ));
+
+            if ($md5sig != $request->md5sig) {
+                Log::error('MD5 Signature Mismatch! Possible fraud.');
+                return response()->json([
+                    'status' => false,
+                    'message' => 'MD5 signature mismatch'
+                ], 400);
+            }
+
+            if ($request->status_code == 2) { // Payment Success
+                // Update order status
+                $order->update([
+                    'transaction_id' => $request->payment_id,
+                    'payment_status' => 'paid',
+                    'status' => 'confirmed'
+                ]);
+
+                // Clear cart items and log the operation
+                $deletedCount = Cart::where('firebase_uid', $order->firebase_uid)->delete();
+                Log::info('Cart items deleted:', [
+                    'order_number' => $order->order_number,
+                    'firebase_uid' => $order->firebase_uid,
+                    'items_deleted' => $deletedCount
+                ]);
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Payment completed successfully'
+                ]);
+            } elseif ($request->status_code == 0) { // Pending
+                $order->update(['payment_status' => 'pending']);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Payment pending'
+                ]);
+            } else { // Failed or Cancelled
+                $order->update(['payment_status' => 'failed']);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Payment failed'
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Payment processing error:', [
+                'message' => $e->getMessage(),
+                'order_id' => $request->order_id ?? null
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Internal server error'
+            ], 500);
+        }
     }
-
-    if ($request->payment_status === 'paid') {
-        $order->update([
-            'transaction_id' => $request->transaction_id,
-            'payment_status' => 'paid'
-        ]);
-        
-        // Clear cart items after successful payment
-        Cart::where('firebase_uid', $request->firebase_uid)->delete();
-        
-    } else {
-        // Delete order items first due to foreign key constraint
-        OrderItem::where('order_id', $order->id)->delete();
-        
-        // Then delete the order
-        $order->delete();
-
-        return response()->json([
-            'status' => true,
-            'message' => 'Payment failed, order cancelled'
-        ]);
-    }
-
-    return response()->json([
-        'status' => true,
-        'message' => 'Payment completed successfully'
-    ]);
-}
 }

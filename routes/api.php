@@ -11,7 +11,7 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductCategoryController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\StockController;
-use App\Models\Product;
+
 
 Route::get('genders', [GenderController::class, 'index']);
 Route::get('categories', [ProductCategoryController::class, 'index']);
@@ -25,6 +25,13 @@ Route::get('stock-list/{limit?}', [StockController::class, 'stockList']);
 Route::get('stocks/{stock}', [StockController::class, 'show']);
 Route::get('stocks/category/{categoryId}/{limit?}', [StockController::class, 'filterByCategory']);
 Route::get('latest-stocks/{limit?}', [StockController::class, 'getLatestStocks']);
+Route::post('payhere/notify', [OrderController::class, 'updatePaymentStatus']);
+
+
+
+
+
+
 
 Route::middleware(['firebase'])->group(function () {
     Route::post('verify', [UserController::class, 'verifyAndSyncUser']);

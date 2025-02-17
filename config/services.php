@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'payhere' => [
+        'merchant_id' => env('PAYHERE_MERCHANT_ID'),
+        'merchant_secret' => env('PAYHERE_MERCHANT_SECRET'),
+    ],
+
 ];
