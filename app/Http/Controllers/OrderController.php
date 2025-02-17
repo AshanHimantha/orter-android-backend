@@ -7,6 +7,7 @@ use App\Models\OrderItem;
 use App\Models\Cart;
 use App\Models\Branch;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -161,6 +162,24 @@ class OrderController extends Controller
         ]);
     }
 
+       public function destroy(Order $order)
+    {
+        if ($order->payment_status === 'paid') {
+            return response()->json([
+                'status' => false,
+                'message' => 'Paid orders cannot be deleted'
+            ], 403);
+        }
+    
+        $order->delete();
+    
+        return response()->json([
+            'status' => true,
+            'message' => 'Order deleted successfully'
+        ]);
+    }
+
+
     public function updatePaymentStatus(Request $request)
     {
         try {
@@ -228,17 +247,28 @@ class OrderController extends Controller
                     'status' => true,
                     'message' => 'Payment completed successfully'
                 ]);
-            } elseif ($request->status_code == 0) { // Pending
-                $order->update(['payment_status' => 'pending']);
-                return response()->json([
-                    'status' => true,
-                    'message' => 'Payment pending'
-                ]);
+            
             } else { // Failed or Cancelled
-                $order->update(['payment_status' => 'failed']);
+                // Restore stock quantities before deleting the order
+                foreach ($order->items as $item) {
+                    $stock = $item->stock;
+                    $sizeColumn = strtolower($item->size) . '_quantity';
+                    $stock->$sizeColumn += $item->quantity;
+                    $stock->save();
+                }
+
+                // Delete order items and order
+                $order->items()->delete();
+                $order->delete();
+
+                Log::info('Order deleted due to failed payment:', [
+                    'order_number' => $order->order_number,
+                    'payment_status_code' => $request->status_code
+                ]);
+
                 return response()->json([
                     'status' => false,
-                    'message' => 'Payment failed'
+                    'message' => 'Payment failed, order removed'
                 ]);
             }
         } catch (\Exception $e) {

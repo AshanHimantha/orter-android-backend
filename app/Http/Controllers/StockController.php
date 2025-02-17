@@ -96,6 +96,9 @@ class StockController extends Controller
         $stocks = Stock::with(['product' => function($query) {
             $query->select('id', 'name', 'price', 'main_image', 'collection_id');
         }, 'product.collection:id,name'])
+        ->whereHas('product', function($query) {
+            $query->where('is_active', "1");
+        })
         ->latest()
         ->take($limit)
         ->get();
@@ -156,7 +159,7 @@ public function getLatestStocks($limit = 10)
         $query->select('id', 'name', 'price', 'main_image', 'collection_id', 'category_id');
     }, 'product.collection:id,name'])
         ->whereHas('product', function($query) {
-            $query->where('is_active', true);
+            $query->where('is_active', "1");
         })
         ->latest()
         ->take($limit)
