@@ -33,7 +33,7 @@ class OrderController extends Controller
     {
         $request->validate([
             'delivery_type' => 'required|in:delivery,pickup',
-            'branch_id' => 'required_if:delivery_type,pickup|exists:branches,id',
+            'branch_name' => 'required_if:delivery_type,pickup|string',  // Changed from branch_id
             'delivery_name' => 'required',
             'delivery_phone' => 'required|regex:/^([0-9\s\-\+\(\)]*)$/|min:10',
             'delivery_address' => 'required_if:delivery_type,delivery',
@@ -42,6 +42,19 @@ class OrderController extends Controller
         ]);
 
         $firebaseUid = $request->firebase_uid;
+
+        // Find branch by name if pickup delivery type
+        $branchId = null;
+        if ($request->delivery_type === 'pickup') {
+            $branch = Branch::where('name', $request->branch_name)->first();
+            if (!$branch) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Branch not found'
+                ], 404);
+            }
+            $branchId = $branch->id;
+        }
         
         $cartItems = Cart::where('firebase_uid', $firebaseUid)
             ->with(['stock.product'])
@@ -86,7 +99,7 @@ class OrderController extends Controller
             'pickup_id' => $pickupId,
             'firebase_uid' => $firebaseUid,
             'delivery_type' => $request->delivery_type,
-            'branch_id' => $request->branch_id,
+            'branch_id' => $branchId,  // Use the found branch ID
             'delivery_name' => $request->delivery_name,
             'delivery_phone' => $request->delivery_phone,
             'delivery_address' => $request->delivery_address,
@@ -185,7 +198,7 @@ class OrderController extends Controller
         try {
             // Log the entire request for debugging
             Log::info('PayHere Callback Data:', $request->all());
-
+            $paymentData = json_encode($request->all(), JSON_PRETTY_PRINT);
             // Validate the request with order_id matching order_number
             $request->validate([
                 'order_id' => 'required|exists:orders,order_number',
@@ -194,7 +207,8 @@ class OrderController extends Controller
                 'payhere_currency' => 'required|string',
                 'status_code' => 'required|integer',
                 'md5sig' => 'required|string',
-                'payment_id' => 'required|string'
+                'payment_id' => 'required|string',
+                
             ]);
 
             // Find order by order_number instead of id
@@ -232,7 +246,8 @@ class OrderController extends Controller
                 $order->update([
                     'transaction_id' => $request->payment_id,
                     'payment_status' => 'paid',
-                    'status' => 'confirmed'
+                    'status' => 'confirmed',
+                    'notes' => $paymentData
                 ]);
 
                 // Clear cart items and log the operation

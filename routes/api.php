@@ -28,10 +28,6 @@ Route::get('latest-stocks/{limit?}', [StockController::class, 'getLatestStocks']
 Route::post('payhere/notify', [OrderController::class, 'updatePaymentStatus']);
 
 
-// Route::post('orders/payment', [OrderController::class, 'updatePaymentStatus']);
-
-
-// Route::delete('orders/{id}', [OrderController::class, 'destroy']); 
 
 Route::middleware(['firebase'])->group(function () {
     Route::post('verify', [UserController::class, 'verifyAndSyncUser']);
