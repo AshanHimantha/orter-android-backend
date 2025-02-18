@@ -254,6 +254,33 @@ class OrderController extends Controller
                 // Send confirmation email
                 try {
                     $orderItems = $order->items()->with('stock.product')->get();
+                    
+                    // Calculate total weight and shipping
+                    $totalWeight = $orderItems->sum(function($item) {
+                        return $item->quantity * $item->stock->product->weight;
+                    });
+
+                    $weightInKg = $totalWeight / 1000;
+                    
+                    // Get base charge from curriers table
+                    $courier = \App\Models\curriers::where('is_active', true)->first();
+                    $baseCharge = $courier ? $courier->price : 400; // Default to 400 if no active courier
+                    
+                    // Calculate shipping with base charge and 100 per extra kg
+                    $shippingFee = $order->delivery_type === 'pickup' ? 0 : $baseCharge;
+
+                    if ($order->delivery_type === 'delivery' && $weightInKg > 1) {
+                        $extraKgs = ceil($weightInKg - 1);
+                        $shippingFee += ($extraKgs * 100); // 100 per extra kg
+                    }
+
+                    // Get branch name if it's a pickup order
+                    $branchName = '';
+                    if ($order->delivery_type === 'pickup' && $order->branch_id) {
+                        $branch = Branch::find($order->branch_id);
+                        $branchName = $branch ? $branch->name : '';
+                    }
+
                     $total = 0;
                     $productsHtml = '';
                     
@@ -282,12 +309,14 @@ class OrderController extends Controller
                     $orderData = [
                         'name' => $order->delivery_name,
                         'address1' => $order->delivery_address,
-                        'town' => $order->delivery_city,
+                        'town' => $order->delivery_type === 'pickup' ? $branchName : $order->delivery_city,
                         'zip' => '',
                         'country' => 'Sri Lanka',
                         'order_id' => $order->order_number,
                         'date' => $order->created_at->format('Y-m-d'),
-                        'method' => ucfirst($order->payment_method)
+                        'method' => ucfirst($order->payment_method),
+                        'delivery_type' => $order->delivery_type,
+                        'pickup_id' => $order->pickup_id
                     ];
 
                     $bodyContent = $this->generateEmailTemplate($orderData, $productsHtml, $total, $shippingFee);
@@ -355,6 +384,29 @@ class OrderController extends Controller
 
     private function generateEmailTemplate($order, $productsHtml, $total, $shippingFee)
     {
+        // Determine if it's pickup or delivery
+        $isPickup = isset($order['delivery_type']) && $order['delivery_type'] === 'pickup';
+        
+        // Change title and message based on delivery type
+        $title = $isPickup ? 'Your Order is Ready for Pickup!' : 'Your Order is Being Shipped!';
+        $message = $isPickup ? 'Your order has been confirmed and will be ready for pickup soon.' : 'Thanks a lot for your purchase.';
+
+        // Generate shipping/pickup details section
+        $detailsSection = $isPickup ? '
+            <div style="width: 65%; border-width: 1px; border: 1px solid #ddd; padding: 10px; border-radius: 5px; margin: 3px;">
+                <div style="font-weight: 600;font-size: medium;">Pickup Details</div>
+                <hr style="border-top: #333;">
+                <div><span style="font-size: 10px; color: gray;"> Name</span><br><span>' . $order['name'] . '</span></div>
+                <div><span style="font-size: 10px; color: gray;"> Branch</span><br><span>' . $order['town'] . '</span></div>
+                <div><span style="font-size: 10px; color: gray;"> Pickup ID</span><br><span>' . $order['pickup_id'] . '</span></div>
+            </div>' : '
+            <div style="width: 65%; border-width: 1px; border: 1px solid #ddd; padding: 10px; border-radius: 5px; margin: 3px;">
+                <div style="font-weight: 600;font-size: medium;">Shipping Details</div>
+                <hr style="border-top: #333;">
+                <div><span style="font-size: 10px; color: gray;"> Name</span><br><span>' . $order['name'] . '</span></div>
+                <div><span style="font-size: 10px; color: gray;"> Address</span><br><span>' . $order['address1'] . '</span><br><span>' . $order['town'] . '</span>, <span>' . $order['zip'] . '</span><br><span>' . $order['country'] . '</span></div>
+            </div>';
+
         return '
         <style>
             body {
@@ -377,16 +429,11 @@ class OrderController extends Controller
                 <img src="https://orterclothing.com/assets/original-54e6c1d18d61f8f8aa2ed95caaf197ae.gif" style="width: 100%; height: 100%; object-fit: cover;">
             </div>
             <div style="text-align: center;font-size: 15px;font-weight: 600;">
-                <h1>Your Order is Being Shipped!</h1>
-                <p style="margin-top: -20px; font-weight: 400;">Hey ' . $order['name'] . '! Thanks a lot for your purchase.</p>
+                <h1>' . $title . '</h1>
+                <p style="margin-top: -20px; font-weight: 400;">Hey ' . $order['name'] . '! ' . $message . '</p>
             </div>
             <div style="display: flex; justify-content: space-between; padding-bottom: 10px;">
-                <div style="width: 65%; border-width: 1px; border: 1px solid #ddd; padding: 10px; border-radius: 5px; margin: 3px;">
-                    <div style="font-weight: 600;font-size: medium;">Shipping Details</div>
-                    <hr style="border-top: #333;">
-                    <div><span style="font-size: 10px; color: gray;"> Name</span><br><span>' . $order['name'] . '</span></div>
-                    <div><span style="font-size: 10px; color: gray;"> Address</span><br><span>' . $order['address1'] . '</span><br><span>' . $order['town'] . '</span>, <span>' . $order['zip'] . '</span><br><span>' . $order['country'] . '</span></div>
-                </div>
+                ' . $detailsSection . '
                 <div style="width: 35%; border-width: 1px; border: 1px solid #ddd; padding: 10px; border-radius: 5px; margin: 3px;">
                     <div style="font-weight: 600;font-size: medium;">Order Details</div>
                     <hr style="border-top: #333;">
@@ -395,32 +442,109 @@ class OrderController extends Controller
                     <div><span style="font-size: 10px; color: gray;"> Payment :</span><br><span class="font-medium ">' . $order['method'] . '</span></div>
                 </div>
             </div>
-            <div style="text-align: center;font-size: 15px;font-weight: 500;">
-                <div style="background-color: #333; color: #f4f4f4; padding-top: 5px; padding-bottom: 5px; width: 100%; border-top-right-radius: 3px; border-top-left-radius: 3px; font-size: 15px;"><span>Order Summary</span></div>
-            </div>
-            <table style="width: 100%; border-collapse: collapse; border-width: 1px; border: 1px solid #ddd;">
-                <tbody>
-                ' . $productsHtml . '
-                </tbody>
-            </table>
-            <div style="width:75%;margin-left:auto;margin-top:10px;">
-                <div style="width: 80%; padding-left: 15%; display: flex;"> 
-                    <div style="width: 50%;">
-                        <p>Sub Total :</p>
-                        <p>Shipping :</p>
-                        <hr style="border-top:1px solid #ddd; ">
-                        <p style="font-size: 20px;">Total :</p>
-                    </div> 
-                    <div style="width: 50%;text-align: end;"> 
-                        <p> Rs.' . $total . ' </p>
-                        <p> Rs.' . $shippingFee . ' </p>
-                        <hr style="border-top:1px solid #ddd; ">
-                        <p style="font-weight:bold; font-size: 20px;"> Rs.' . ($total + $shippingFee) . '</p>
-                    </div>  
-                </div>  
-            </div> 
+            <!-- ... rest of the template remains the same ... -->
+            ' . $this->getOrderSummarySection($productsHtml, $total, $shippingFee) . '
         </div>
         <div style="width: 100%; text-align: center; margin-top: 50px; font-size: 10px; "><a href="https://orterclothing.com" style="text-decoration: none; color: gray;" target="_blank" >© 2024 Orter Clothing. All rights reserved. </a></div>
         </body>';
     }
+
+    private function getOrderSummarySection($productsHtml, $total, $shippingFee)
+    {
+        return '
+        <div style="text-align: center;font-size: 15px;font-weight: 500;">
+            <div style="background-color: #333; color: #f4f4f4; padding-top: 5px; padding-bottom: 5px; width: 100%; border-top-right-radius: 3px; border-top-left-radius: 3px; font-size: 15px;"><span>Order Summary</span></div>
+        </div>
+        <table style="width: 100%; border-collapse: collapse; border-width: 1px; border: 1px solid #ddd;">
+            <tbody>
+            ' . $productsHtml . '
+            </tbody>
+        </table>
+        <div style="width:75%;margin-left:auto;margin-top:10px;">
+            <div style="width: 80%; padding-left: 15%; display: flex;"> 
+                <div style="width: 50%;">
+                    <p>Sub Total :</p>
+                    <p>Shipping :</p>
+                    <hr style="border-top:1px solid #ddd; ">
+                    <p style="font-size: 20px;">Total :</p>
+                </div> 
+                <div style="width: 50%;text-align: end;"> 
+                    <p> Rs.' . $total . ' </p>
+                    <p> Rs.' . $shippingFee . ' </p>
+                    <hr style="border-top:1px solid #ddd; ">
+                    <p style="font-weight:bold; font-size: 20px;"> Rs.' . ($total + $shippingFee) . '</p>
+                </div>  
+            </div>  
+        </div>';
+    }
+
+
+public function getUserOrders(Request $request)
+{
+    try {
+        // Validate firebase_uid
+        $request->validate([
+            'firebase_uid' => 'required|string'
+        ]);
+
+        $orders = Order::where('firebase_uid', $request->firebase_uid)
+            ->with(['items' => function($query) {
+                $query->select(
+                    'id', 
+                    'order_id', 
+                    'product_name', 
+                    'product_image', 
+                    'quantity', 
+                    'selling_price',
+                    'size',
+                    'total'
+                );
+            }])
+            ->latest()
+            ->get();
+
+        if ($orders->isEmpty()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'No orders found'
+            ], 404);
+        }
+
+        // Format response
+        $response = [
+            'status' => true,
+            'data' => $orders->map(function($order) {
+                return [
+                    'orderID' => (string)$order->id,
+                    'orderNumber' => $order->order_number,
+                    'orderDate' => $order->created_at->format('Y-m-d'),
+                    'orderStatus' => $order->status,
+                    'orderTotal' => (string)$order->items->sum('total'),
+                    'items' => $order->items->map(function($item) {
+                        return [
+                            'productName' => $item->product_name,
+                            'productImage' => $item->product_image,
+                            'quantity' => (string)$item->quantity,
+                            'price' => (string)$item->selling_price,
+                            'size' => $item->size
+                        ];
+                    })
+                ];
+            })
+        ];
+
+        return response()->json($response);
+
+    } catch (\Exception $e) {
+        Log::error('Error fetching user orders:', [
+            'firebase_uid' => $request->firebase_uid ?? 'not provided',
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Error fetching orders'
+        ], 500);
+    }
+}
 }

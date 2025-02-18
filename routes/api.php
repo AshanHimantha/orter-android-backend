@@ -27,6 +27,7 @@ Route::get('stocks/category/{categoryId}/{limit?}', [StockController::class, 'fi
 Route::get('latest-stocks/{limit?}', [StockController::class, 'getLatestStocks']);
 Route::post('payhere/notify', [OrderController::class, 'updatePaymentStatus']);
 
+Route::get('user/orders', [OrderController::class, 'getUserOrders']);
 
 
 Route::middleware(['firebase'])->group(function () {
