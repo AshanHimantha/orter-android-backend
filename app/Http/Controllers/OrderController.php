@@ -9,6 +9,7 @@ use App\Models\Branch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -250,6 +251,59 @@ class OrderController extends Controller
                     'notes' => $paymentData
                 ]);
 
+                // Send confirmation email
+                try {
+                    $orderItems = $order->items()->with('stock.product')->get();
+                    $total = 0;
+                    $productsHtml = '';
+                    
+                    foreach ($orderItems as $item) {
+                        $itemTotal = $item->quantity * $item->selling_price;
+                        $total += $itemTotal;
+                        
+                        $productsHtml .= '
+                        <tr>
+                            <td style="padding: 10px; border-bottom: 1px solid #ddd; color: #333;">
+                                <div style="display: flex;">
+                                    <div>
+                                        <img src="https://testapi.ashanhimantha.com/storage/' . $item->product_image . '" style="width: 50px; height: 50px; object-fit: cover; border-radius: 5px;">
+                                    </div>
+                                    <div style="margin-left: 10px;">
+                                        <div>' . $item->product_name . ' × ' . $item->quantity . '</div>
+                                        <div style="text-decoration: none; color: gray;">' . $item->size . '</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: right; color: #333;">Rs. ' . $itemTotal . '</td>
+                        </tr>';
+                    }
+
+                    $shippingFee = $order->delivery_type === 'pickup' ? 0 : 400;
+                    $orderData = [
+                        'name' => $order->delivery_name,
+                        'address1' => $order->delivery_address,
+                        'town' => $order->delivery_city,
+                        'zip' => '',
+                        'country' => 'Sri Lanka',
+                        'order_id' => $order->order_number,
+                        'date' => $order->created_at->format('Y-m-d'),
+                        'method' => ucfirst($order->payment_method)
+                    ];
+
+                    $bodyContent = $this->generateEmailTemplate($orderData, $productsHtml, $total, $shippingFee);
+                    Mail::to("ashanhimantha555@gmail.com")->send(new \App\Mail\OrderConfirmation($bodyContent));
+
+                    Log::info('Order confirmation email sent successfully', [
+                        'order_number' => $order->order_number,
+                        'email' => $order->email
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('Failed to send order confirmation email', [
+                        'order_number' => $order->order_number,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+
                 // Clear cart items and log the operation
                 $deletedCount = Cart::where('firebase_uid', $order->firebase_uid)->delete();
                 Log::info('Cart items deleted:', [
@@ -297,5 +351,76 @@ class OrderController extends Controller
                 'message' => 'Internal server error'
             ], 500);
         }
+    }
+
+    private function generateEmailTemplate($order, $productsHtml, $total, $shippingFee)
+    {
+        return '
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background-color: white;
+                margin: 0;
+                padding: 5px;
+                font-family: "Poppins", sans-serif;
+                font-weight: 400;
+                font-style: normal;
+            }
+        </style>
+
+        <body>
+        <div style="max-width: 600px; margin: 20px auto; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="https://orterclothing.com/assets/orterlogo.png" alt="Orter Logo" style="max-width: 150px; margin-bottom: 10px;">
+            </div>
+            <div style="width: 100%; height: 200px;">
+                <img src="https://orterclothing.com/assets/original-54e6c1d18d61f8f8aa2ed95caaf197ae.gif" style="width: 100%; height: 100%; object-fit: cover;">
+            </div>
+            <div style="text-align: center;font-size: 15px;font-weight: 600;">
+                <h1>Your Order is Being Shipped!</h1>
+                <p style="margin-top: -20px; font-weight: 400;">Hey ' . $order['name'] . '! Thanks a lot for your purchase.</p>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding-bottom: 10px;">
+                <div style="width: 65%; border-width: 1px; border: 1px solid #ddd; padding: 10px; border-radius: 5px; margin: 3px;">
+                    <div style="font-weight: 600;font-size: medium;">Shipping Details</div>
+                    <hr style="border-top: #333;">
+                    <div><span style="font-size: 10px; color: gray;"> Name</span><br><span>' . $order['name'] . '</span></div>
+                    <div><span style="font-size: 10px; color: gray;"> Address</span><br><span>' . $order['address1'] . '</span><br><span>' . $order['town'] . '</span>, <span>' . $order['zip'] . '</span><br><span>' . $order['country'] . '</span></div>
+                </div>
+                <div style="width: 35%; border-width: 1px; border: 1px solid #ddd; padding: 10px; border-radius: 5px; margin: 3px;">
+                    <div style="font-weight: 600;font-size: medium;">Order Details</div>
+                    <hr style="border-top: #333;">
+                    <div><span style="font-size: 10px; color: gray;"> Order :</span><br><span>' . $order['order_id'] . '</span></div>
+                    <div><span style="font-size: 10px; color: gray;"> Date :</span><br><span>' . $order['date'] . '</span></div>
+                    <div><span style="font-size: 10px; color: gray;"> Payment :</span><br><span class="font-medium ">' . $order['method'] . '</span></div>
+                </div>
+            </div>
+            <div style="text-align: center;font-size: 15px;font-weight: 500;">
+                <div style="background-color: #333; color: #f4f4f4; padding-top: 5px; padding-bottom: 5px; width: 100%; border-top-right-radius: 3px; border-top-left-radius: 3px; font-size: 15px;"><span>Order Summary</span></div>
+            </div>
+            <table style="width: 100%; border-collapse: collapse; border-width: 1px; border: 1px solid #ddd;">
+                <tbody>
+                ' . $productsHtml . '
+                </tbody>
+            </table>
+            <div style="width:75%;margin-left:auto;margin-top:10px;">
+                <div style="width: 80%; padding-left: 15%; display: flex;"> 
+                    <div style="width: 50%;">
+                        <p>Sub Total :</p>
+                        <p>Shipping :</p>
+                        <hr style="border-top:1px solid #ddd; ">
+                        <p style="font-size: 20px;">Total :</p>
+                    </div> 
+                    <div style="width: 50%;text-align: end;"> 
+                        <p> Rs.' . $total . ' </p>
+                        <p> Rs.' . $shippingFee . ' </p>
+                        <hr style="border-top:1px solid #ddd; ">
+                        <p style="font-weight:bold; font-size: 20px;"> Rs.' . ($total + $shippingFee) . '</p>
+                    </div>  
+                </div>  
+            </div> 
+        </div>
+        <div style="width: 100%; text-align: center; margin-top: 50px; font-size: 10px; "><a href="https://orterclothing.com" style="text-decoration: none; color: gray;" target="_blank" >© 2024 Orter Clothing. All rights reserved. </a></div>
+        </body>';
     }
 }
