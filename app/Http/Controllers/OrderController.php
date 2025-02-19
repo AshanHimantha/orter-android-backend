@@ -519,7 +519,21 @@ public function getUserOrders(Request $request)
                     'orderNumber' => $order->order_number,
                     'orderDate' => $order->created_at->format('Y-m-d'),
                     'orderStatus' => $order->status,
-                    'orderTotal' => (string)$order->items->sum('total'),
+                    'orderTotal' => (string)($order->items->sum('total') + ($order->delivery_type === 'pickup' ? 0 : 
+                        (function() use ($order) {
+                            $totalWeight = $order->items->sum(function($item) {
+                                return $item->quantity * ($item->stock->product->weight ?? 0);
+                            });
+                            $weightInKg = $totalWeight / 1000;
+                            $shippingFee = 400; // Base charge
+                            if ($weightInKg > 1) {
+                                $extraKgs = ceil($weightInKg - 1);
+                                $shippingFee += ($extraKgs * 100);
+                            }
+                            return $shippingFee;
+                        })()
+                    )),
+                    'deliveryType' => $order->delivery_type,
                     'items' => $order->items->map(function($item) {
                         return [
                             'productName' => $item->product_name,
@@ -544,6 +558,90 @@ public function getUserOrders(Request $request)
         return response()->json([
             'status' => false,
             'message' => 'Error fetching orders'
+        ], 500);
+    }
+}
+
+public function getOrderById($id)
+{
+    try {
+        $order = Order::where('id', $id)
+            ->with(['items' => function($query) {
+                $query->select(
+                    'id', 
+                    'order_id', 
+                    'product_name', 
+                    'product_image', 
+                    'quantity', 
+                    'selling_price',
+                    'size',
+                    'total'
+                );
+            }])
+            ->first();
+
+        if (!$order) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Order not found'
+            ], 404);
+        }
+
+        // Calculate shipping fee
+        $shippingFee = $order->delivery_type === 'pickup' ? 0 : 400;
+        if ($order->delivery_type === 'delivery') {
+            $totalWeight = $order->items->sum(function($item) {
+                return $item->quantity * ($item->stock->product->weight ?? 0);
+            });
+            
+            $weightInKg = $totalWeight / 1000;
+            if ($weightInKg > 1) {
+                $extraKgs = ceil($weightInKg - 1);
+                $shippingFee += ($extraKgs * 100);
+            }
+        }
+
+        $response = [
+            'status' => true,
+            'data' => [
+                'orderID' => (string)$order->id,
+                'orderNumber' => $order->order_number,
+                'orderDate' => $order->created_at->format('Y-m-d'),
+                'orderStatus' => $order->status,
+                'deliveryType' => $order->delivery_type,
+                'pickupId' => $order->pickup_id,
+                'shippingFee' => (string)$shippingFee,
+                'subTotal' => (string)$order->items->sum('total'),
+                'total' => (string)($order->items->sum('total') + $shippingFee),
+                'deliveryDetails' => [
+                    'name' => $order->delivery_name,
+                    'phone' => $order->delivery_phone,
+                    'address' => $order->delivery_address,
+                    'city' => $order->delivery_city
+                ],
+                'items' => $order->items->map(function($item) {
+                    return [
+                        'productName' => $item->product_name,
+                        'productImage' => $item->product_image,
+                        'quantity' => (string)$item->quantity,
+                        'price' => (string)$item->selling_price,
+                        'size' => $item->size
+                    ];
+                })
+            ]
+        ];
+
+        return response()->json($response);
+
+    } catch (\Exception $e) {
+        Log::error('Error fetching order:', [
+            'order_id' => $id,
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Error fetching order'
         ], 500);
     }
 }
