@@ -39,7 +39,8 @@ class OrderController extends Controller
             'delivery_phone' => 'required|regex:/^([0-9\s\-\+\(\)]*)$/|min:10',
             'delivery_address' => 'required_if:delivery_type,delivery',
             'delivery_city' => 'required_if:delivery_type,delivery',
-            'payment_method' => 'required|in:cash,card'
+            'payment_method' => 'required|in:cash,card',
+            'email' => 'required|email'  // Add this line
         ]);
 
         $firebaseUid = $request->firebase_uid;
@@ -107,7 +108,8 @@ class OrderController extends Controller
             'delivery_city' => $request->delivery_city,
             'payment_method' => $request->payment_method,
             'payment_status' => 'pending',
-            'status' => 'pending'
+            'status' => 'pending',
+            'email' => $request->email  // Add this line
         ]);
 
         $subTotal = 0;
@@ -320,7 +322,28 @@ class OrderController extends Controller
                     ];
 
                     $bodyContent = $this->generateEmailTemplate($orderData, $productsHtml, $total, $shippingFee);
-                    Mail::to("ashanhimantha555@gmail.com")->send(new \App\Mail\OrderConfirmation($bodyContent));
+
+                    try {
+                        // Use the email stored in the order
+                        if ($order->email) {
+                            Mail::to($order->email)->send(new \App\Mail\OrderConfirmation($bodyContent));
+                            
+                            Log::info('Order confirmation email sent successfully', [
+                                'order_number' => $order->order_number,
+                                'email' => $order->email
+                            ]);
+                        } else {
+                            Log::error('Email not found for order', [
+                                'order_number' => $order->order_number
+                            ]);
+                        }
+                    } catch (\Exception $e) {
+                        Log::error('Error sending email', [
+                            'order_number' => $order->order_number,
+                            'email' => $order->email,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
 
                     Log::info('Order confirmation email sent successfully', [
                         'order_number' => $order->order_number,

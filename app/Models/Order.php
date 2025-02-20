@@ -20,7 +20,8 @@ class Order extends Model
         'payment_status',
         'status',
         'transaction_id',
-        'notes'
+        'notes',
+        'email',
     ];
 
     public function items()
