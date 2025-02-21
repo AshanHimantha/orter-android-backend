@@ -7,6 +7,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\GenderController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductCategoryController;
 use App\Http\Controllers\ProductController;
@@ -34,13 +35,12 @@ Route::middleware(['firebase'])->group(function () {
     Route::post('verify', [UserController::class, 'verifyAndSyncUser']);
     Route::get('/orders', [UserController::class, 'orders']);
     Route::apiResource('carts', CartController::class);
-    
     Route::patch('carts/{cart}/increase', [CartController::class, 'increaseQuantity']);
     Route::patch('carts/{cart}/decrease', [CartController::class, 'decreaseQuantity']);
+    Route::post('/user/fcm-token', [UserController::class, 'updateFcmToken']);
     Route::apiResource('orders', OrderController::class);
-    
     Route::get('order/{id}', [OrderController::class, 'getOrderById']);
-    
+    Route::post('/test-notification', [NotificationController::class, 'testNotification']);
 });
 
 Route::prefix('admin')->group(function () {

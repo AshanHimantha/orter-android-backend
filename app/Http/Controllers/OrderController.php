@@ -336,7 +336,7 @@ class OrderController extends Controller
                             Log::error('Email not found for order', [
                                 'order_number' => $order->order_number
                             ]);
-                        }
+                      }
                     } catch (\Exception $e) {
                         Log::error('Error sending email', [
                             'order_number' => $order->order_number,

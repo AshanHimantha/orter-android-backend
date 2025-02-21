@@ -78,6 +78,11 @@ class UserController extends Controller
     public function updateFcmToken(Request $request)
     {
         try {
+            // Validate the request
+            $request->validate([
+                'fcm_token' => 'required|string'
+            ]);
+
             $bearerToken = $request->bearerToken();
             $verifiedIdToken = $this->auth->verifyIdToken($bearerToken);
             $uid = $verifiedIdToken->claims()->get('sub');
@@ -91,7 +96,10 @@ class UserController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            return response()->json(['status' => false, 'message' => $e->getMessage()], 400);
+            return response()->json([
+                'status' => false, 
+                'message' => $e->getMessage()
+            ], 400);
         }
     }
 
