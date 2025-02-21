@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -7,7 +8,6 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\GenderController;
-use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductCategoryController;
 use App\Http\Controllers\ProductController;
@@ -30,7 +30,7 @@ Route::post('payhere/notify', [OrderController::class, 'updatePaymentStatus']);
 Route::get('user-cart', [CartController::class, 'getUserCart']);
 
 Route::get('user/orders', [OrderController::class, 'getUserOrders']);
-
+Route::post('/send-notification', [NotificationController::class, 'sendNotification']);
 Route::middleware(['firebase'])->group(function () {
     Route::post('verify', [UserController::class, 'verifyAndSyncUser']);
     Route::get('/orders', [UserController::class, 'orders']);
@@ -40,7 +40,7 @@ Route::middleware(['firebase'])->group(function () {
     Route::post('/user/fcm-token', [UserController::class, 'updateFcmToken']);
     Route::apiResource('orders', OrderController::class);
     Route::get('order/{id}', [OrderController::class, 'getOrderById']);
-    Route::post('/test-notification', [NotificationController::class, 'testNotification']);
+
 });
 
 Route::prefix('admin')->group(function () {
