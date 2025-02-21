@@ -27,7 +27,7 @@ return new class extends Migration
             $table->enum('status', [
                 'pending', 'confirmed', 'processing', 'shipped', 
                 'delivered', 'ready_for_pickup', 'picked_up', 
-                'completed', 'cancelled'
+                'completed', 'cancelled','returned'
             ])->default('pending');
             $table->text('notes')->nullable();
             

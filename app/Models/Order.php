@@ -22,8 +22,9 @@ class Order extends Model
         'transaction_id',
         'notes',
         'email',
-        'courier_id',      // Add this new field
-        'tracking_number' 
+        'courier_id',
+        'tracking_number',
+        'processed_by'  // Add this new field
     ];
 
     public function items()
@@ -43,5 +44,11 @@ class Order extends Model
     public function courier()
     {
         return $this->belongsTo(curriers::class, 'courier_id');
+    }
+
+    // Add this new relationship
+    public function processedBy()
+    {
+        return $this->belongsTo(Admin::class, 'processed_by');
     }
 }

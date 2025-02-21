@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CollectionController;
+use App\Http\Controllers\CurrierController;
 use App\Http\Controllers\GenderController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductCategoryController;
@@ -47,9 +48,11 @@ Route::middleware(['firebase'])->group(function () {
 
 //admin routes
 Route::prefix('admin')->group(function () {
-
+        
+         //public login route
         Route::post('login', [AdminController::class, 'login']);
        
+        //protected routes
         Route::middleware('auth:sanctum')->group(function () {
         Route::get('all-orders', [OrderController::class, 'getAllOrders']);
         Route::apiResource('orders', OrderController::class);
@@ -62,6 +65,19 @@ Route::prefix('admin')->group(function () {
         Route::apiResource('products', ProductController::class)->except(['index']);
         Route::apiResource('stocks', StockController::class);
         Route::patch('stocks/{stock}/quantities', [StockController::class, 'updateQuantities']);
+        Route::post('/orders/{id}/cancel', [OrderController::class, 'cancelOrder']);
+
+
+
+
+        // Currier routes
+    Route::prefix('curriers')->group(function () {
+      Route::get('/', [CurrierController::class, 'index']);
+      Route::post('/', [CurrierController::class, 'store']);
+      Route::put('/{id}', [CurrierController::class, 'update']);
+      Route::delete('/{id}', [CurrierController::class, 'destroy']);
+      Route::patch('/{id}/toggle-active', [CurrierController::class, 'toggleActive']);
+});
     });
 });
 

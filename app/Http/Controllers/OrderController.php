@@ -12,9 +12,17 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Http\Controllers\NotificationController;
 
 class OrderController extends Controller
 {
+    protected $notificationController;
+
+    public function __construct(NotificationController $notificationController)
+    {
+        $this->notificationController = $notificationController;
+    }
+
     public function index(Request $request)
     {
         $firebaseUid = $request->firebase_uid;
@@ -164,7 +172,7 @@ class OrderController extends Controller
     public function updateStatus(Order $order, Request $request)
     {
         $request->validate([
-            'status' => 'required|in:pending,confirmed,processing,shipped,delivered,ready_for_pickup,picked_up,completed,cancelled'
+            'status' => 'required|in:pending,confirmed,processing,shipped,delivered,ready_for_pickup,picked_up,completed,cancelled,returned'
         ]);
 
         $order->update([
@@ -785,4 +793,159 @@ private function calculateShippingFee($order, $totalWeight = null)
 
     return $shippingFee;
 }
+
+
+
+public function cancelOrder(Request $request, $id)
+{
+    try {
+        $order = Order::with(['items.stock', 'user'])->findOrFail($id);
+
+        // Check if order can be cancelled
+        $nonCancellableStatuses = ['delivered', 'completed', 'picked_up'];
+        if (in_array($order->status, $nonCancellableStatuses)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Order cannot be cancelled in its current status'
+            ], 400);
+        }
+
+        DB::beginTransaction();
+
+        // Update order status and set processed_by
+        $order->update([
+            'status' => 'cancelled',
+            'processed_by' => $request->user()->id
+        ]);
+
+        // Restore stock quantities
+        foreach ($order->items as $item) {
+            $stock = $item->stock;
+            if ($stock) {
+                $sizeColumn = strtolower($item->size) . '_quantity';
+                $stock->increment($sizeColumn, $item->quantity);
+                
+                Log::info('Stock restored:', [
+                    'order_id' => $order->id,
+                    'product' => $item->product_name,
+                    'size' => $item->size,
+                    'quantity' => $item->quantity
+                ]);
+            }
+        }
+
+        DB::commit();
+
+        // Send cancellation email
+        try {
+            if ($order->email) {
+                $orderData = [
+                    'name' => $order->delivery_name,
+                    'order_number' => $order->order_number,
+                    'date' => $order->created_at->format('Y-m-d'),
+                    'items' => $order->items->map(function($item) {
+                        return [
+                            'name' => $item->product_name,
+                            'quantity' => $item->quantity,
+                            'size' => $item->size,
+                            'price' => $item->selling_price
+                        ];
+                    })
+                ];
+
+                $emailContent = $this->generateCancellationEmail($orderData);
+                Mail::to($order->email)->send(new \App\Mail\OrderCancellation($emailContent));
+
+                Log::info('Order cancellation email sent:', [
+                    'order_number' => $order->order_number,
+                    'email' => $order->email
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Error sending cancellation email:', [
+                'order_number' => $order->order_number,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        // Send FCM notification if user has FCM token
+        if ($order->user && $order->user->fcm_token) {
+            $this->notificationController->sendNotification(new Request([
+                'token' => $order->user->fcm_token,
+                'title' => 'Order Cancelled',
+                'body' => "Your order #{$order->order_number} has been cancelled."
+            ]));
+        }
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Order cancelled successfully',
+            'data' => $order->fresh(['items', 'processedBy'])
+        ]);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Error cancelling order:', [
+            'order_id' => $id,
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Error cancelling order'
+        ], 500);
+    }
 }
+
+private function generateCancellationEmail($orderData)
+{
+    return '
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: white;
+            margin: 0;
+            padding: 5px;
+            font-family: "Poppins", sans-serif;
+        }
+    </style>
+    <body>
+        <div style="max-width: 600px; margin: 20px auto; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="https://orterclothing.com/assets/orterlogo.png" alt="Orter Logo" style="max-width: 150px;">
+            </div>
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #333;">Order Cancelled</h1>
+                <p>Hello ' . $orderData['name'] . ',</p>
+                <p>Your order #' . $orderData['order_number'] . ' has been cancelled.</p>
+            </div>
+            <div style="background-color: #f8f8f8; padding: 20px; border-radius: 5px;">
+                <h3 style="margin-top: 0;">Order Details</h3>
+                <p>Order Number: ' . $orderData['order_number'] . '</p>
+                <p>Date: ' . $orderData['date'] . '</p>
+                <div style="margin-top: 20px;">
+                    <h4>Cancelled Items:</h4>
+                    <ul style="list-style: none; padding: 0;">' .
+                    collect($orderData['items'])->map(function($item) {
+                        return '<li style="margin-bottom: 10px;">
+                            ' . $item['name'] . ' - Size: ' . $item['size'] . ' (Qty: ' . $item['quantity'] . ')
+                        </li>';
+                    })->join('') . '
+                    </ul>
+                </div>
+            </div>
+            <div style="margin-top: 30px; text-align: center; color: #666;">
+                <p>If you have any questions, please contact our customer service.</p>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #666;">
+            © 2024 Orter Clothing. All rights reserved.
+        </div>
+    </body>';
+}
+}
+
+
+
+
+
