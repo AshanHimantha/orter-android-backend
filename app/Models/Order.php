@@ -22,6 +22,8 @@ class Order extends Model
         'transaction_id',
         'notes',
         'email',
+        'courier_id',      // Add this new field
+        'tracking_number' 
     ];
 
     public function items()
@@ -37,5 +39,9 @@ class Order extends Model
     public function branch()
     {
         return $this->belongsTo(Branch::class);
+    }
+    public function courier()
+    {
+        return $this->belongsTo(curriers::class, 'courier_id');
     }
 }

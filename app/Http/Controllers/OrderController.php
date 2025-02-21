@@ -542,20 +542,7 @@ public function getUserOrders(Request $request)
                     'orderNumber' => $order->order_number,
                     'orderDate' => $order->created_at->format('Y-m-d'),
                     'orderStatus' => $order->status,
-                    'orderTotal' => (string)($order->items->sum('total') + ($order->delivery_type === 'pickup' ? 0 : 
-                        (function() use ($order) {
-                            $totalWeight = $order->items->sum(function($item) {
-                                return $item->quantity * ($item->stock->product->weight ?? 0);
-                            });
-                            $weightInKg = $totalWeight / 1000;
-                            $shippingFee = 400; // Base charge
-                            if ($weightInKg > 1) {
-                                $extraKgs = ceil($weightInKg - 1);
-                                $shippingFee += ($extraKgs * 100);
-                            }
-                            return $shippingFee;
-                        })()
-                    )),
+                    'orderTotal' => (string)($order->items->sum('total') + $this->calculateShippingFee($order)),
                     'deliveryType' => $order->delivery_type,
                     'items' => $order->items->map(function($item) {
                         return [
@@ -589,18 +576,23 @@ public function getOrderById($id)
 {
     try {
         $order = Order::where('id', $id)
-            ->with(['items' => function($query) {
-                $query->select(
-                    'id', 
-                    'order_id', 
-                    'product_name', 
-                    'product_image', 
-                    'quantity', 
-                    'selling_price',
-                    'size',
-                    'total'
-                );
-            }])
+            ->with([
+                'items' => function($query) {
+                    $query->select(
+                        'id', 
+                        'order_id', 
+                        'product_name', 
+                        'product_image', 
+                        'quantity', 
+                        'selling_price',
+                        'size',
+                        'total',
+                        'stock_id'  // Add this
+                    );
+                },
+                'items.stock.product', // Add this relationship
+                'courier'
+            ])
             ->first();
 
         if (!$order) {
@@ -610,19 +602,8 @@ public function getOrderById($id)
             ], 404);
         }
 
-        // Calculate shipping fee
-        $shippingFee = $order->delivery_type === 'pickup' ? 0 : 400;
-        if ($order->delivery_type === 'delivery') {
-            $totalWeight = $order->items->sum(function($item) {
-                return $item->quantity * ($item->stock->product->weight ?? 0);
-            });
-            
-            $weightInKg = $totalWeight / 1000;
-            if ($weightInKg > 1) {
-                $extraKgs = ceil($weightInKg - 1);
-                $shippingFee += ($extraKgs * 100);
-            }
-        }
+        // Use the calculateShippingFee method instead of hardcoded values
+        $shippingFee = $this->calculateShippingFee($order);
 
         $response = [
             'status' => true,
@@ -635,6 +616,24 @@ public function getOrderById($id)
                 'pickupId' => $order->pickup_id,
                 'shippingFee' => (string)$shippingFee,
                 'subTotal' => (string)$order->items->sum('total'),
+                'email' => $order->email,
+                'paymentStatus' => $order->payment_status,
+                'paymentMethod' => $order->payment_method,
+                "tracking_number" => $order->tracking_number,
+                "courier" => $order->courier ? [
+                    'id' => $order->courier->id,
+                    'name' => $order->courier->name,
+                    'price' => $order->courier->price,
+                    'description' => $order->courier->description, // Add this line
+                    'charge' => $order->courier->charge,
+                    'extra_per_kg' => $order->courier->extra_per_kg
+                ] : null,
+
+                'branch' => $order->branch ? [
+                    'id' => $order->branch->id,
+                    'name' => $order->branch->name
+                ] : null,
+                
                 'total' => (string)($order->items->sum('total') + $shippingFee),
                 'deliveryDetails' => [
                     'name' => $order->delivery_name,
@@ -667,5 +666,123 @@ public function getOrderById($id)
             'message' => 'Error fetching order'
         ], 500);
     }
+}
+
+public function getAllOrders()
+{
+    try {
+        $orders = Order::with(['items', 'branch'])
+            ->latest()
+            ->get()
+            ->map(function($order) {
+                // Calculate shipping fee
+                $shippingFee = $this->calculateShippingFee($order);
+
+                return [
+                    'id' => $order->id,
+                    'orderNumber' => $order->order_number,
+                    'orderDate' => $order->created_at->format('Y-m-d H:i:s'),
+                    'status' => $order->status,
+                    'paymentStatus' => $order->payment_status,
+                    'paymentMethod' => $order->payment_method,
+                    'deliveryType' => $order->delivery_type,
+                    'pickupId' => $order->pickup_id,
+                    'customerDetails' => [
+                        'name' => $order->delivery_name,
+                        'phone' => $order->delivery_phone,
+                        'email' => $order->email,
+                        'address' => $order->delivery_address,
+                        'city' => $order->delivery_city,
+                    ],
+                    'branch' => $order->branch ? [
+                        'id' => $order->branch->id,
+                        'name' => $order->branch->name
+                    ] : null,
+                    'items' => $order->items->map(function($item) {
+                        return [
+                            'productName' => $item->product_name,
+                            'productImage' => $item->product_image,
+                            'size' => $item->size,
+                            'quantity' => $item->quantity,
+                            'price' => $item->selling_price,
+                            'total' => $item->total
+                        ];
+                    }),
+                    'summary' => [
+                        'subtotal' => $order->items->sum('total'),
+                        'shippingFee' => $shippingFee,
+                        'total' => $order->items->sum('total') + $shippingFee
+                    ]
+                ];
+            });
+
+        return response()->json([
+            'status' => true,
+            'data' => $orders
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Error fetching all orders:', [
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Error fetching orders',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+// Create a private method to calculate shipping fee
+private function calculateShippingFee($order, $totalWeight = null)
+{
+    // Return 0 if pickup delivery type
+    if ($order->delivery_type === 'pickup') {
+        return 0;
+    }
+
+    // Get base charge from active courier
+    $courier = \App\Models\curriers::where('is_active', true)->first();
+    
+    if (!$courier) {
+        return 0; // Return 0 if no active courier found
+    }
+
+    // Make sure order items are loaded with their related products
+    if (!$order->relationLoaded('items')) {
+        $order->load(['items.stock.product']);
+    }
+
+    // Calculate total weight if not provided
+    if ($totalWeight === null) {
+        $totalWeight = 0;
+        foreach ($order->items as $item) {
+            $weight = $item->stock->product->weight ?? 0;
+            $totalWeight += ($weight * $item->quantity);
+        }
+    }
+
+    // Convert to kg and calculate shipping
+    $weightInKg = $totalWeight / 1000;
+    $shippingFee = $courier->charge; // Base charge
+    $extraKgs = 0; // Initialize extraKgs
+
+    if ($weightInKg > 1) {
+        $extraKgs = ceil($weightInKg - 1);
+        $shippingFee += ($extraKgs * $courier->extra_per_kg);
+    }
+
+    Log::info('Shipping calculation details:', [
+        'order_id' => $order->id,
+        'total_weight_g' => $totalWeight,
+        'weight_kg' => $weightInKg,
+        'base_charge' => $courier->charge,
+        'extra_kgs' => $extraKgs,
+        'extra_charge' => $extraKgs * $courier->extra_per_kg,
+        'total_shipping_fee' => $shippingFee
+    ]);
+
+    return $shippingFee;
 }
 }

@@ -13,7 +13,7 @@ use App\Http\Controllers\ProductCategoryController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\StockController;
 
-
+// public routes
 Route::get('genders', [GenderController::class, 'index']);
 Route::get('categories', [ProductCategoryController::class, 'index']);
 Route::get('collections', [CollectionController::class, 'index']);
@@ -28,26 +28,31 @@ Route::get('stocks/category/{categoryId}/{limit?}', [StockController::class, 'fi
 Route::get('latest-stocks/{limit?}', [StockController::class, 'getLatestStocks']);
 Route::post('payhere/notify', [OrderController::class, 'updatePaymentStatus']);
 Route::get('user-cart', [CartController::class, 'getUserCart']);
-
+Route::get('order/{id}', [OrderController::class, 'getOrderById']);
 Route::get('user/orders', [OrderController::class, 'getUserOrders']);
 Route::post('/send-notification', [NotificationController::class, 'sendNotification']);
+
+
+//firebase routes
 Route::middleware(['firebase'])->group(function () {
+
     Route::post('verify', [UserController::class, 'verifyAndSyncUser']);
     Route::get('/orders', [UserController::class, 'orders']);
     Route::apiResource('carts', CartController::class);
     Route::patch('carts/{cart}/increase', [CartController::class, 'increaseQuantity']);
     Route::patch('carts/{cart}/decrease', [CartController::class, 'decreaseQuantity']);
     Route::post('/user/fcm-token', [UserController::class, 'updateFcmToken']);
-    Route::apiResource('orders', OrderController::class);
-    Route::get('order/{id}', [OrderController::class, 'getOrderById']);
 
 });
 
+//admin routes
 Route::prefix('admin')->group(function () {
 
-    Route::post('login', [AdminController::class, 'login']);
-
-    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('login', [AdminController::class, 'login']);
+       
+        Route::middleware('auth:sanctum')->group(function () {
+        Route::get('all-orders', [OrderController::class, 'getAllOrders']);
+        Route::apiResource('orders', OrderController::class);
         Route::post('logout', [AdminController::class, 'logout']);
         Route::get('details', [AdminController::class, 'details']);
         Route::post('register', [AdminController::class, 'register']);
