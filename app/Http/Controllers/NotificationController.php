@@ -18,36 +18,62 @@ class NotificationController extends Controller
                 'body' => 'required|string',
             ]);
 
+            // Set timezone (critical)
+            date_default_timezone_set('UTC'); // Or your server's correct timezone!
+
             // Load Firebase credentials
             $firebaseCredentials = json_decode(file_get_contents(config('firebase.credentials')), true);
-            
+
             if (!$firebaseCredentials) {
+                Log::error('Firebase credentials not found or invalid.'); //More specific log
                 return response()->json([
                     'success' => false,
                     'message' => 'Firebase credentials not found or invalid'
                 ], 500);
             }
 
-            // Prepare JWT claim
-            $issuedAt = time();
-            $expirationTime = $issuedAt + 3600;
+            // Fixed JWT claim timing
+            $now = time();
             $payload = [
                 'iss' => $firebaseCredentials['client_email'],
                 'sub' => $firebaseCredentials['client_email'],
                 'aud' => 'https://oauth2.googleapis.com/token',
-                'iat' => $issuedAt,
-                'exp' => $expirationTime,
+                'iat' => $now,                 // Current time
+                'exp' => $now + 3600,          // Exactly 1 hour from now
                 'scope' => 'https://www.googleapis.com/auth/firebase.messaging'
             ];
 
-            // Get access token
-            $jwt = JWT::encode($payload, $firebaseCredentials['private_key'], 'RS256');
-            $tokenResponse = Http::asForm()->post('https://oauth2.googleapis.com/token', [
-                'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-                'assertion' => $jwt,
+            // Debug log - VERY IMPORTANT FOR DIAGNOSIS
+            Log::debug('JWT Details:', [
+                'now (time())' => $now,
+                'iat' => $payload['iat'],
+                'exp' => $payload['exp'],
+                'difference (exp - iat)' => $payload['exp'] - $payload['iat'],
+                'now (date)' => date('Y-m-d H:i:s', $now),   // Human-readable time
+                'iat (date)' => date('Y-m-d H:i:s', $payload['iat']),
+                'exp (date)' => date('Y-m-d H:i:s', $payload['exp']),
+                'timezone' => date_default_timezone_get() // Log the timezone
             ]);
 
+
+            // Get access token with error details
+            try {
+                $jwt = JWT::encode($payload, $firebaseCredentials['private_key'], 'RS256');
+                $tokenResponse = Http::asForm()->post('https://oauth2.googleapis.com/token', [
+                    'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                    'assertion' => $jwt,
+                ]);
+            } catch (\Exception $e) {
+                Log::error('JWT Encoding Error:', ['error' => $e->getMessage()]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'JWT Encoding Error',
+                    'error' => $e->getMessage()
+                ], 500);
+            }
+
             if (!$tokenResponse->successful()) {
+                Log::error('Failed to obtain access token:', ['error' => $tokenResponse->json()]); //Detailed error log
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to obtain access token',
@@ -66,9 +92,12 @@ class NotificationController extends Controller
                         'title' => $request->title,
                         'body' => $request->body,
                     ],
-                    'data' => [
+                    'data' => $request->data ?? [
                         'click_action' => 'FLUTTER_NOTIFICATION_CLICK',
                         'status' => 'done'
+                    ],
+                    'android' => [
+                        'priority' => 'high',
                     ]
                 ]
             ];
@@ -86,6 +115,7 @@ class NotificationController extends Controller
                     'data' => $response->json()
                 ], 200);
             } else {
+                Log::error('Failed to send notification:', ['status' => $response->status(), 'error' => $response->json()]); // Detailed error log
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to send notification',

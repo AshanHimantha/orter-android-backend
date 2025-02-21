@@ -873,7 +873,13 @@ public function cancelOrder(Request $request, $id)
             $this->notificationController->sendNotification(new Request([
                 'token' => $order->user->fcm_token,
                 'title' => 'Order Cancelled',
-                'body' => "Your order #{$order->order_number} has been cancelled."
+                'body' => "Your order #{$order->order_number} has been cancelled.",
+                'data' => [
+                    'orderId' => (string)$order->id,  // Convert to string explicitly
+                    'orderNumber' => $order->order_number,
+                    'status' => 'cancelled',
+                    'type' => 'order_update'
+                ]
             ]));
         }
 
