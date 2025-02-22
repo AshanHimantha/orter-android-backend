@@ -163,9 +163,25 @@ class OrderController extends Controller
 
     public function show(Order $order)
     {
+        // Load order relations
+        $order->load(['items.stock.product', 'branch', 'courier']);
+
+        // Calculate shipping fee using the private method
+        $shippingFee = $this->calculateShippingFee($order);
+
+        // Calculate subtotal from order items
+        $subtotal = $order->items->sum('total');
+
         return response()->json([
             'status' => true,
-            'data' => $order->load(['items', 'branch'])
+            'data' => [
+                'order' => $order,
+                'summary' => [
+                    'subtotal' => $subtotal,
+                    'shipping_fee' => $shippingFee,
+                    'total' => $subtotal + $shippingFee
+                ]
+            ]
         ]);
     }
 
@@ -1030,6 +1046,153 @@ public function updateTracking(Request $request, $id)
         return response()->json([
             'status' => false,
             'message' => 'Error updating tracking details'
+        ], 500);
+    }
+}
+
+
+public function updateReadyForPickup(Request $request, $id)
+{
+    try {
+        $order = Order::with(['user'])->findOrFail($id);
+
+        // Check if order is pickup type
+        if ($order->delivery_type !== 'pickup') {
+            return response()->json([
+                'status' => false,
+                'message' => 'This order is not a pickup order'
+            ], 400);
+        }
+
+        DB::beginTransaction();
+
+        // Update order status
+        $order->update([
+            'status' => 'ready_for_pickup'
+        ]);
+
+        // Send email notification
+        if ($order->email) {
+            try {
+                Mail::to($order->email)->send(new \App\Mail\OrderReadyForPickup([
+                    'name' => $order->delivery_name,
+                    'order_number' => $order->order_number,
+                    'pickup_id' => $order->pickup_id,
+                    'branch_name' => $order->branch ? $order->branch->name : ''
+                ]));
+
+                Log::info('Ready for pickup email sent:', [
+                    'order_number' => $order->order_number,
+                    'email' => $order->email
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Error sending ready for pickup email:', [
+                    'order_number' => $order->order_number,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        // Send FCM notification if user has FCM token
+        if ($order->user && $order->user->fcm_token) {
+            $this->notificationController->sendNotification(new Request([
+                'token' => $order->user->fcm_token,
+                'title' => 'Order Ready for Pickup',
+                'body' => "Your order #{$order->order_number} is ready for pickup. Pickup ID: {$order->pickup_id}",
+                'data' => [
+                    'orderId' => (string)$order->id,
+                    'orderNumber' => $order->order_number,
+                    'status' => 'ready_for_pickup',
+                    'type' => 'order_update',
+                    'pickup_id' => $order->pickup_id
+                ]
+            ]));
+        }
+
+        DB::commit();
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Order status updated to ready for pickup',
+            'data' => $order->fresh(['branch'])
+        ]);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Error updating order to ready for pickup:', [
+            'order_id' => $id,
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Error updating order status'
+        ], 500);
+    }
+}
+
+public function updatePickedUp(Request $request, $id)
+{
+    try {
+        $order = Order::with(['user'])->findOrFail($id);
+
+        // Check if order is pickup type
+        if ($order->delivery_type !== 'pickup') {
+            return response()->json([
+                'status' => false,
+                'message' => 'This order is not a pickup order'
+            ], 400);
+        }
+
+        // Check if order is ready for pickup
+        if ($order->status !== 'ready_for_pickup') {
+            return response()->json([
+                'status' => false,
+                'message' => 'Order must be ready for pickup first'
+            ], 400);
+        }
+
+        DB::beginTransaction();
+
+        // Update order status
+        $order->update([
+            'status' => 'picked_up',
+            'picked_up_at' => now()
+        ]);
+
+        // Send FCM notification if user has FCM token
+        if ($order->user && $order->user->fcm_token) {
+            $this->notificationController->sendNotification(new Request([
+                'token' => $order->user->fcm_token,
+                'title' => 'Order Picked Up',
+                'body' => "Your order #{$order->order_number} has been picked up.",
+                'data' => [
+                    'orderId' => (string)$order->id,
+                    'orderNumber' => $order->order_number,
+                    'status' => 'picked_up',
+                    'type' => 'order_update'
+                ]
+            ]));
+        }
+
+        DB::commit();
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Order status updated to picked up',
+            'data' => $order->fresh(['branch'])
+        ]);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Error updating order to picked up:', [
+            'order_id' => $id,
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Error updating order status'
         ], 500);
     }
 }

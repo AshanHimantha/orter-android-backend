@@ -60,6 +60,8 @@ Route::prefix('admin')->group(function () {
         Route::post('orders/{id}/cancel', [OrderController::class, 'cancelOrder']);
         Route::post('orders/{id}/tracking', [OrderController::class, 'updateTracking']);
         Route::apiResource('orders', OrderController::class);
+        Route::post('orders/{id}/ready-for-pickup', [OrderController::class, 'updateReadyForPickup']);
+        Route::post('orders/{id}/picked-up', [OrderController::class, 'updatePickedUp']);
         
         // Resource routes
         Route::apiResource('categories', ProductCategoryController::class)->except(['index']);
