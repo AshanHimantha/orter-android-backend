@@ -28,7 +28,7 @@ class OrderController extends Controller
         $firebaseUid = $request->firebase_uid;
         
         $orders = Order::where('firebase_uid', $firebaseUid)
-            ->with(['items', 'branch'])
+            ->with(['items', 'branch','courier'])
             ->latest()
             ->get();
 
@@ -939,6 +939,97 @@ public function getOrderById($id)
         return response()->json([
             'status' => false,
             'message' => 'Error fetching order'
+        ], 500);
+    }
+}
+
+
+public function updateTracking(Request $request, $id)
+{
+    try {
+        // Validate request
+        $request->validate([
+            'tracking_number' => 'required|string',
+            'courier_id' => 'required|exists:curriers,id'
+        ]);
+
+        $order = Order::with(['user'])->findOrFail($id);
+
+        DB::beginTransaction();
+
+        // Update order with tracking details
+        $updateData = [
+            'tracking_number' => $request->tracking_number,
+            'status' => 'shipped'
+        ];
+
+        // Only include courier_id if not withoutTracking
+        if ($request->tracking_number !== 'withoutTracking') {
+            $updateData['courier_id'] = $request->courier_id;
+        }
+
+        $order->update($updateData);
+
+        // Only send notifications if tracking number is not "withoutTracking"
+        if ($request->tracking_number !== 'withoutTracking') {
+            // Send email notification
+            if ($order->email) {
+                try {
+                    Mail::to($order->email)->send(new \App\Mail\TrackingUpdate([
+                        'name' => $order->delivery_name,
+                        'order_number' => $order->order_number,
+                        'tracking_number' => $request->tracking_number,
+                        'courier' => $order->courier->description,
+                        'service' => $order->courier->name
+                    ]));
+
+                    Log::info('Tracking update email sent:', [
+                        'order_number' => $order->order_number,
+                        'email' => $order->email
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('Error sending tracking update email:', [
+                        'order_number' => $order->order_number,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            // Send FCM notification if user has FCM token
+            if ($order->user && $order->user->fcm_token) {
+                $this->notificationController->sendNotification(new Request([
+                    'token' => $order->user->fcm_token,
+                    'title' => 'Order Shipped',
+                    'body' => "Your order #{$order->order_number} has been shipped. Track your order with number: {$request->tracking_number}",
+                    'data' => [
+                        'orderId' => (string)$order->id,
+                        'orderNumber' => $order->order_number,
+                        'status' => 'shipped',
+                        'type' => 'order_update',
+                        'tracking_number' => $request->tracking_number
+                    ]
+                ]));
+            }
+        }
+
+        DB::commit();
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Tracking details updated successfully',
+            'data' => $order->fresh(['courier'])
+        ]);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Error updating tracking details:', [
+            'order_id' => $id,
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Error updating tracking details'
         ], 500);
     }
 }
