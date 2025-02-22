@@ -510,82 +510,17 @@ class OrderController extends Controller
     }
 
 
-public function getUserOrders(Request $request)
-{
-    try {
-        // Validate firebase_uid
-        $request->validate([
-            'firebase_uid' => 'required|string'
-        ]);
 
-        $orders = Order::where('firebase_uid', $request->firebase_uid)
-            ->with(['items' => function($query) {
-                $query->select(
-                    'id', 
-                    'order_id', 
-                    'product_name', 
-                    'product_image', 
-                    'quantity', 
-                    'selling_price',
-                    'size',
-                    'total'
-                );
-            }])
-            ->latest()
-            ->get();
-
-        if ($orders->isEmpty()) {
-            return response()->json([
-                'status' => false,
-                'message' => 'No orders found'
-            ], 404);
-        }
-
-        // Format response
-        $response = [
-            'status' => true,
-            'data' => $orders->map(function($order) {
-                return [
-                    'orderID' => (string)$order->id,
-                    'orderNumber' => $order->order_number,
-                    'orderDate' => $order->created_at->format('Y-m-d'),
-                    'orderStatus' => $order->status,
-                    'orderTotal' => (string)($order->items->sum('total') + $this->calculateShippingFee($order)),
-                    'deliveryType' => $order->delivery_type,
-                    'items' => $order->items->map(function($item) {
-                        return [
-                            'productName' => $item->product_name,
-                            'productImage' => $item->product_image,
-                            'quantity' => (string)$item->quantity,
-                            'price' => (string)$item->selling_price,
-                            'size' => $item->size
-                        ];
-                    })
-                ];
-            })
-        ];
-
-        return response()->json($response);
-
-    } catch (\Exception $e) {
-        Log::error('Error fetching user orders:', [
-            'firebase_uid' => $request->firebase_uid ?? 'not provided',
-            'error' => $e->getMessage()
-        ]);
-
-        return response()->json([
-            'status' => false,
-            'message' => 'Error fetching orders'
-        ], 500);
-    }
-}
-
-public function getOrderById($id)
-{
-    try {
-        $order = Order::where('id', $id)
-            ->with([
-                'items' => function($query) {
+    public function getUserOrders(Request $request)
+    {
+        try {
+            // Validate firebase_uid
+            $request->validate([
+                'firebase_uid' => 'required|string'
+            ]);
+    
+            $orders = Order::where('firebase_uid', $request->firebase_uid)
+                ->with(['items' => function($query) {
                     $query->select(
                         'id', 
                         'order_id', 
@@ -594,87 +529,60 @@ public function getOrderById($id)
                         'quantity', 
                         'selling_price',
                         'size',
-                        'total',
-                        'stock_id'  // Add this
+                        'total'
                     );
-                },
-                'items.stock.product', // Add this relationship
-                'courier'
-            ])
-            ->first();
-
-        if (!$order) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Order not found'
-            ], 404);
-        }
-
-        // Use the calculateShippingFee method instead of hardcoded values
-        $shippingFee = $this->calculateShippingFee($order);
-
-        $response = [
-            'status' => true,
-            'data' => [
-                'orderID' => (string)$order->id,
-                'orderNumber' => $order->order_number,
-                'orderDate' => $order->created_at->format('Y-m-d'),
-                'orderStatus' => $order->status,
-                'deliveryType' => $order->delivery_type,
-                'pickupId' => $order->pickup_id,
-                'shippingFee' => (string)$shippingFee,
-                'subTotal' => (string)$order->items->sum('total'),
-                'email' => $order->email,
-                'paymentStatus' => $order->payment_status,
-                'paymentMethod' => $order->payment_method,
-                "tracking_number" => $order->tracking_number,
-                "courier" => $order->courier ? [
-                    'id' => $order->courier->id,
-                    'name' => $order->courier->name,
-                    'price' => $order->courier->price,
-                    'description' => $order->courier->description, // Add this line
-                    'charge' => $order->courier->charge,
-                    'extra_per_kg' => $order->courier->extra_per_kg
-                ] : null,
-
-                'branch' => $order->branch ? [
-                    'id' => $order->branch->id,
-                    'name' => $order->branch->name
-                ] : null,
-                
-                'total' => (string)($order->items->sum('total') + $shippingFee),
-                'deliveryDetails' => [
-                    'name' => $order->delivery_name,
-                    'phone' => $order->delivery_phone,
-                    'address' => $order->delivery_address,
-                    'city' => $order->delivery_city
-                ],
-                'items' => $order->items->map(function($item) {
+                }, 'courier']) // Add courier relationship
+                ->latest()
+                ->get();
+    
+            if ($orders->isEmpty()) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'No orders found'
+                ], 404);
+            }
+    
+            // Format response
+                       $response = [
+                'status' => true,
+                'data' => $orders->map(function($order) {
                     return [
-                        'productName' => $item->product_name,
-                        'productImage' => $item->product_image,
-                        'quantity' => (string)$item->quantity,
-                        'price' => (string)$item->selling_price,
-                        'size' => $item->size
+                        'orderID' => (string)$order->id,
+                        'orderNumber' => $order->order_number,
+                        'orderDate' => $order->created_at->format('Y-m-d'),
+                        'orderStatus' => $order->status,
+                        'orderTotal' => (string)($order->items->sum('total') + $this->calculateShippingFee($order)),
+                        'deliveryType' => $order->delivery_type,
+                        'tracking' => $order->courier && $order->tracking_number ? 
+                            $order->courier->description . $order->tracking_number : 
+                            'empty',
+                        'items' => $order->items->map(function($item) {
+                            return [
+                                'productName' => $item->product_name,
+                                'productImage' => $item->product_image,
+                                'quantity' => (string)$item->quantity,
+                                'price' => (string)$item->selling_price,
+                                'size' => $item->size
+                            ];
+                        })
                     ];
                 })
-            ]
-        ];
-
-        return response()->json($response);
-
-    } catch (\Exception $e) {
-        Log::error('Error fetching order:', [
-            'order_id' => $id,
-            'error' => $e->getMessage()
-        ]);
-
-        return response()->json([
-            'status' => false,
-            'message' => 'Error fetching order'
-        ], 500);
+            ];
+    
+            return response()->json($response);
+    
+        } catch (\Exception $e) {
+            Log::error('Error fetching user orders:', [
+                'firebase_uid' => $request->firebase_uid ?? 'not provided',
+                'error' => $e->getMessage()
+            ]);
+    
+            return response()->json([
+                'status' => false,
+                'message' => 'Error fetching orders'
+            ], 500);
+        }
     }
-}
 
 public function getAllOrders()
 {
@@ -949,9 +857,93 @@ private function generateCancellationEmail($orderData)
         </div>
     </body>';
 }
+
+
+public function getOrderById($id)
+{
+    try {
+        $order = Order::where('id', $id)
+            ->with(['items' => function($query) {
+                $query->select(
+                    'id', 
+                    'order_id', 
+                    'product_name', 
+                    'product_image', 
+                    'quantity', 
+                    'selling_price',
+                    'size',
+                    'total'
+                );
+            }])
+            ->first();
+
+        if (!$order) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Order not found'
+            ], 404);
+        }
+
+        // Calculate shipping fee
+        $shippingFee = $order->delivery_type === 'pickup' ? 0 : 400;
+        if ($order->delivery_type === 'delivery') {
+            $totalWeight = $order->items->sum(function($item) {
+                return $item->quantity * ($item->stock->product->weight ?? 0);
+            });
+            
+            $weightInKg = $totalWeight / 1000;
+            if ($weightInKg > 1) {
+                $extraKgs = ceil($weightInKg - 1);
+                $shippingFee += ($extraKgs * 100);
+            }
+        }
+
+        $response = [
+            'status' => true,
+            'data' => [
+                'orderID' => (string)$order->id,
+                'orderNumber' => $order->order_number,
+                'orderDate' => $order->created_at->format('Y-m-d'),
+                'orderStatus' => $order->status,
+                'deliveryType' => $order->delivery_type,
+                'pickupId' => $order->pickup_id,
+                'shippingFee' => (string)$shippingFee,
+                'subTotal' => (string)$order->items->sum('total'),
+                'total' => (string)($order->items->sum('total') + $shippingFee),
+                'deliveryDetails' => [
+                    'name' => $order->delivery_name,
+                    'phone' => $order->delivery_phone,
+                    'address' => $order->delivery_address,
+                    'city' => $order->delivery_city
+                ],
+                'items' => $order->items->map(function($item) {
+                    return [
+                        'productName' => $item->product_name,
+                        'productImage' => $item->product_image,
+                        'quantity' => (string)$item->quantity,
+                        'price' => (string)$item->selling_price,
+                        'size' => $item->size
+                    ];
+                })
+            ]
+        ];
+
+        return response()->json($response);
+
+    } catch (\Exception $e) {
+        Log::error('Error fetching order:', [
+            'order_id' => $id,
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Error fetching order'
+        ], 500);
+    }
 }
 
 
-
+}
 
 

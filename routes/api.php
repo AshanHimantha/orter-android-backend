@@ -43,7 +43,7 @@ Route::middleware(['firebase'])->group(function () {
     Route::patch('carts/{cart}/increase', [CartController::class, 'increaseQuantity']);
     Route::patch('carts/{cart}/decrease', [CartController::class, 'decreaseQuantity']);
     Route::post('/user/fcm-token', [UserController::class, 'updateFcmToken']);
-
+    Route::apiResource('orders', OrderController::class);
 });
 
 //admin routes

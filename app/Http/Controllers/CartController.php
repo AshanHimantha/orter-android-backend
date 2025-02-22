@@ -26,17 +26,6 @@ class CartController extends Controller
             'quantity' => 'required|integer|min:1'
         ]);
 
-        // Check stock availability
-        $stock = Stock::findOrFail($request->stock_id);
-        $sizeColumn = strtolower($request->size) . '_quantity';
-        
-        if ($stock->$sizeColumn < $request->quantity) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Insufficient stock quantity'
-            ], 400);
-        }
-
         // Check if item already exists in cart
         $existingCart = Cart::where([
             'firebase_uid' => $request->firebase_uid,
@@ -44,9 +33,25 @@ class CartController extends Controller
             'size' => $request->size
         ])->first();
 
+        // Check stock availability
+        $stock = Stock::findOrFail($request->stock_id);
+        $sizeColumn = strtolower($request->size) . '_quantity';
+        
+        $totalRequestedQuantity = $request->quantity;
+        if ($existingCart) {
+            $totalRequestedQuantity += $existingCart->quantity;
+        }
+
+        if ($stock->$sizeColumn < $totalRequestedQuantity) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Insufficient stock quantity'
+            ], 400);
+        }
+
         if ($existingCart) {
             $existingCart->update([
-                'quantity' => $existingCart->quantity + $request->quantity
+                'quantity' => $totalRequestedQuantity
             ]);
             $cart = $existingCart;
         } else {
