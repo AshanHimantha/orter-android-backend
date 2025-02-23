@@ -22,7 +22,8 @@ class Product extends Model
         'main_image',
         'image_1',
         'image_2',
-        'is_active'
+        'is_active',
+       
     ];
 
     protected $casts = [

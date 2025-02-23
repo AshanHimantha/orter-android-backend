@@ -29,6 +29,8 @@ Route::get('stocks/category/{categoryId}/{limit?}', [StockController::class, 'fi
 Route::get('latest-stocks/{limit?}', [StockController::class, 'getLatestStocks']);
 Route::post('payhere/notify', [OrderController::class, 'updatePaymentStatus']);
 
+Route::post('/send-notification', [NotificationController::class, 'sendNotification']);
+
 // Firebase authenticated routes
 Route::middleware(['firebase'])->group(function () {
     Route::post('verify', [UserController::class, 'verifyAndSyncUser']);
