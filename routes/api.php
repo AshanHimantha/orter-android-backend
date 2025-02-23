@@ -8,6 +8,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\CurrierController;
+use App\Http\Controllers\FirebaseUserController;
 use App\Http\Controllers\GenderController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductCategoryController;
@@ -53,6 +54,17 @@ Route::prefix('admin')->group(function () {
     Route::post('login', [AdminController::class, 'login']);
     
     Route::middleware('auth:sanctum')->group(function () {
+
+
+        Route::prefix('firebase-users')->group(function () {
+            Route::get('/', [FirebaseUserController::class, 'index']);
+            Route::post('/', [FirebaseUserController::class, 'store']);
+            Route::get('/{uid}', [FirebaseUserController::class, 'show']);
+            Route::put('/{uid}', [FirebaseUserController::class, 'update']);
+            Route::delete('/{uid}', [FirebaseUserController::class, 'destroy']);
+        });
+
+
         Route::post('logout', [AdminController::class, 'logout']);
         Route::get('details', [AdminController::class, 'details']);
         Route::post('register', [AdminController::class, 'register']);
@@ -81,6 +93,10 @@ Route::prefix('admin')->group(function () {
             Route::delete('/{id}', [CurrierController::class, 'destroy']);
             Route::patch('/{id}/toggle-active', [CurrierController::class, 'toggleActive']);
         });
+
+
+
+        
     });
 });
 
