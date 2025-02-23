@@ -94,7 +94,7 @@ class StockController extends Controller
     public function stockList($limit = 10)
     {
         $stocks = Stock::with(['product' => function($query) {
-            $query->select('id', 'name', 'price', 'main_image', 'collection_id');
+            $query->select('id', 'name', 'price', 'main_image', 'collection_id', 'category_id');
         }, 'product.collection:id,name'])
         ->whereHas('product', function($query) {
             $query->where('is_active', "1");
@@ -107,10 +107,11 @@ class StockController extends Controller
             return [
                 'id' => $stock->id,
                 'product_name' => $stock->product->name,
-                'price' => (int)$stock->product->price, // Cast to integer
+                'price' => (int)$stock->product->price,
                 'main_image' => asset('storage/' . $stock->product->main_image),
                 'collection_name' => $stock->product->collection->name ?? null,
                 'total_quantity' => $stock->total_quantity,
+                'category_id' => $stock->product->category_id
             ];
         });
     
@@ -122,35 +123,44 @@ class StockController extends Controller
     }
 
     public function filterByCategory($categoryId, $limit = 10)
-{
-    $stocks = Stock::with(['product' => function($query) use ($categoryId) {
-        $query->where('category_id', $categoryId)
-            ->select('id', 'name', 'price', 'main_image', 'collection_id', 'category_id');
-    }, 'product.collection:id,name'])
-        ->whereHas('product', function($query) use ($categoryId) {
-            $query->where('category_id', $categoryId);
-        })
-        ->latest()
-        ->take($limit)
-        ->get();
+    {
+        if (!$categoryId) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Category ID is required'
+            ], 400);
+        }
 
-    $formattedStocks = $stocks->map(function ($stock) {
-        return [
-            'id' => $stock->id,
-            'product_name' => $stock->product->name,
-            'price' => (int)$stock->product->price,
-            'main_image' => asset('storage/' . $stock->product->main_image),
-            'collection_name' => $stock->product->collection->name ?? null,
-            'total_quantity' => $stock->total_quantity,
-        ];
-    });
+        $stocks = Stock::with(['product' => function($query) use ($categoryId) {
+            $query->where('category_id', $categoryId)
+                ->select('id', 'name', 'price', 'main_image', 'collection_id', 'category_id');
+        }, 'product.collection:id,name'])
+            ->whereHas('product', function($query) use ($categoryId) {
+                $query->where('category_id', $categoryId)
+                      ->where('is_active', "1");
+            })
+            ->latest()
+            ->take($limit)
+            ->get();
 
-    return response()->json([
-        'status' => true,
-        'count' => $stocks->count(),
-        'data' => $formattedStocks
-    ]);
-}
+        $formattedStocks = $stocks->map(function ($stock) {
+            return [
+                'id' => $stock->id,
+                'product_name' => $stock->product->name,
+                'price' => (int)$stock->product->price,
+                'main_image' => asset('storage/' . $stock->product->main_image),
+                'collection_name' => $stock->product->collection->name ?? null,
+                'total_quantity' => $stock->total_quantity,
+                'category_id' => $stock->product->category_id
+            ];
+        });
+
+        return response()->json([
+            'status' => true,
+            'count' => $stocks->count(),
+            'data' => $formattedStocks
+        ]);
+    }
 
 
 public function getLatestStocks($limit = 10)
@@ -173,6 +183,7 @@ public function getLatestStocks($limit = 10)
             'main_image' => asset('storage/' . $stock->product->main_image),
             'collection_name' => $stock->product->collection->name ?? null,
             'total_quantity' => $stock->total_quantity,
+            'category_id' => $stock->product->category_id
         ];
     });
 
