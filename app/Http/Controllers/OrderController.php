@@ -388,6 +388,32 @@ class OrderController extends Controller
                     'items_deleted' => $deletedCount
                 ]);
 
+                if ($order->user && $order->user->fcm_token) {
+                    try {
+                        $this->notificationController->sendNotification(new Request([
+                            'token' => $order->user->fcm_token,
+                            'title' => 'Payment Successful',
+                            'body' => "Your payment for order #{$order->order_number} has been confirmed.",
+                            'data' => [
+                                'orderId' => (string)$order->id,
+                                'orderNumber' => $order->order_number,
+                                'status' => 'confirmed',
+                                'type' => 'payment_update'
+                            ]
+                        ]));
+                
+                        Log::info('Payment notification sent:', [
+                            'order_number' => $order->order_number,
+                            'user_id' => $order->user->id
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::error('Error sending payment notification:', [
+                            'order_number' => $order->order_number,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                }
+
                 return response()->json([
                     'status' => true,
                     'message' => 'Payment completed successfully'
