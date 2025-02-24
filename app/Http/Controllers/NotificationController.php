@@ -21,16 +21,32 @@ class NotificationController extends Controller
             // Set timezone (critical)
             date_default_timezone_set('UTC'); // Or your server's correct timezone!
 
-            // Load Firebase credentials
-            $firebaseCredentials = json_decode(file_get_contents(config('firebase.credentials')), true);
+            // Load Firebase credentials with debug logging
+            $credentialsPath = config('firebase.credentials');
+            Log::debug('Firebase credentials path:', ['path' => $credentialsPath]);
 
-            if (!$firebaseCredentials) {
-                Log::error('Firebase credentials not found or invalid.'); //More specific log
+            if (!file_exists($credentialsPath)) {
+                Log::error('Firebase credentials file does not exist at path:', ['path' => $credentialsPath]);
                 return response()->json([
                     'success' => false,
-                    'message' => 'Firebase credentials not found or invalid'
+                    'message' => 'Firebase credentials file not found'
                 ], 500);
             }
+
+            $fileContents = file_get_contents($credentialsPath);
+            if ($fileContents === false) {
+                Log::error('Could not read Firebase credentials file');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Could not read Firebase credentials file'
+                ], 500);
+            }
+
+            $firebaseCredentials = json_decode($fileContents, true);
+            Log::debug('Firebase credentials loaded:', [
+                'project_id' => $firebaseCredentials['project_id'] ?? 'not found',
+                'client_email' => $firebaseCredentials['client_email'] ?? 'not found'
+            ]);
 
             // Fixed JWT claim timing
             $now = time();
@@ -128,6 +144,90 @@ class NotificationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to send notification',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function testNotification()
+    {
+        try {
+            // Test Firebase credentials loading
+            $credentialsPath = config('firebase.credentials');
+            Log::info('Testing Firebase configuration...', ['credentials_path' => $credentialsPath]);
+
+            if (!file_exists($credentialsPath)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Credentials file not found',
+                    'path' => $credentialsPath
+                ], 404);
+            }
+
+            $firebaseCredentials = json_decode(file_get_contents($credentialsPath), true);
+            if (!$firebaseCredentials) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid JSON in credentials file',
+                    'error' => json_last_error_msg()
+                ], 400);
+            }
+
+            // Verify required fields
+            $requiredFields = ['type', 'project_id', 'private_key', 'client_email'];
+            $missingFields = array_filter($requiredFields, function($field) use ($firebaseCredentials) {
+                return !isset($firebaseCredentials[$field]) || empty($firebaseCredentials[$field]);
+            });
+
+            if (!empty($missingFields)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Missing required fields in credentials',
+                    'missing_fields' => $missingFields
+                ], 400);
+            }
+
+            // Test JWT generation
+            $now = time();
+            $payload = [
+                'iss' => $firebaseCredentials['client_email'],
+                'sub' => $firebaseCredentials['client_email'],
+                'aud' => 'https://oauth2.googleapis.com/token',
+                'iat' => $now,
+                'exp' => $now + 3600,
+                'scope' => 'https://www.googleapis.com/auth/firebase.messaging'
+            ];
+
+            $jwt = JWT::encode($payload, $firebaseCredentials['private_key'], 'RS256');
+            
+            // Test token generation
+            $tokenResponse = Http::asForm()->post('https://oauth2.googleapis.com/token', [
+                'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                'assertion' => $jwt,
+            ]);
+
+            if (!$tokenResponse->successful()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to obtain access token',
+                    'error' => $tokenResponse->json()
+                ], 500);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Firebase configuration is valid',
+                'details' => [
+                    'project_id' => $firebaseCredentials['project_id'],
+                    'client_email' => $firebaseCredentials['client_email'],
+                    'token_obtained' => true
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Test failed',
                 'error' => $e->getMessage()
             ], 500);
         }

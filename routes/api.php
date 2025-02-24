@@ -76,6 +76,7 @@ Route::prefix('admin')->group(function () {
         Route::apiResource('orders', OrderController::class);
         Route::post('orders/{id}/ready-for-pickup', [OrderController::class, 'updateReadyForPickup']);
         Route::post('orders/{id}/picked-up', [OrderController::class, 'updatePickedUp']);
+        Route::post('/orders/{id}/delivered', [OrderController::class, 'updateDelivered']);
         
         // Resource routes
         Route::apiResource('categories', ProductCategoryController::class)->except(['index']);

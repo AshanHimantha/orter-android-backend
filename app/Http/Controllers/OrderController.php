@@ -1198,6 +1198,94 @@ public function updatePickedUp(Request $request, $id)
 }
 
 
+public function updateDelivered(Request $request, $id)
+{
+    try {
+        $order = Order::with(['user'])->findOrFail($id);
+
+        // Check if order is delivery type
+        if ($order->delivery_type !== 'delivery') {
+            return response()->json([
+                'status' => false,
+                'message' => 'This order is not a delivery order'
+            ], 400);
+        }
+
+        // Check if order is shipped
+        if ($order->status !== 'shipped') {
+            return response()->json([
+                'status' => false,
+                'message' => 'Order must be shipped first'
+            ], 400);
+        }
+
+        DB::beginTransaction();
+
+        // Update order status
+        $order->update([
+            'status' => 'delivered',
+            'delivered_at' => now()
+        ]);
+
+        // Send email notification
+        if ($order->email) {
+            try {
+                Mail::to($order->email)->send(new \App\Mail\OrderDelivered([
+                    'name' => $order->delivery_name,
+                    'order_number' => $order->order_number,
+                    'delivery_address' => $order->delivery_address,
+                    'delivery_city' => $order->delivery_city
+                ]));
+
+                Log::info('Delivery confirmation email sent:', [
+                    'order_number' => $order->order_number,
+                    'email' => $order->email
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Error sending delivery confirmation email:', [
+                    'order_number' => $order->order_number,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        // Send FCM notification if user has FCM token
+        if ($order->user && $order->user->fcm_token) {
+            $this->notificationController->sendNotification(new Request([
+                'token' => $order->user->fcm_token,
+                'title' => 'Order Delivered',
+                'body' => "Your order #{$order->order_number} has been delivered successfully!",
+                'data' => [
+                    'orderId' => (string)$order->id,
+                    'orderNumber' => $order->order_number,
+                    'status' => 'delivered',
+                    'type' => 'order_update'
+                ]
+            ]));
+        }
+
+        DB::commit();
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Order status updated to delivered',
+            'data' => $order->fresh()
+        ]);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Error updating order to delivered:', [
+            'order_id' => $id,
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Error updating order status'
+        ], 500);
+    }
+}
+
 }
 
 
